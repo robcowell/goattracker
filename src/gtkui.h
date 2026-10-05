@@ -12,6 +12,7 @@
 #include <adwaita.h>
 #include "goattrk2.h"
 #include "gui.h"
+#include "gundo.h"
 
 // gtkui.c: window, toolbar, menus and keyboard routing
 extern GtkWindow *mainwindow;
@@ -21,6 +22,9 @@ void ui_runkey(unsigned raw, unsigned ascii, int shift);
 void ui_quitnow(void);
 void ui_settitle(void);
 void ui_toast(const char *message);
+void ui_edited(void);
+void ui_undo(void);
+void ui_redo(void);
 GtkWidget *hexspin_new(int max, int digits);
 
 // gtkgrid.c: the custom-drawn pattern, orderlist and table editors
@@ -39,6 +43,7 @@ extern GtkWidget *songnameentry;
 GtkWidget *panel_instruments_new(void);
 GtkWidget *panel_songinfo_new(void);
 void panels_sync(void);
+void panels_syncall(void);
 
 // gtkdialogs.c
 void ui_loadsong(int merge);
@@ -46,6 +51,7 @@ void ui_savesong(void);
 void ui_loadinstrument(void);
 void ui_saveinstrument(void);
 void ui_showsoundfailure(void);
+void ui_confirmdiscard(void (*proceed)(void));
 
 // Latin-1 (song data) <-> UTF-8 (GTK) conversion; returns a static buffer
 const char *ui_toutf8(const char *latin1);
