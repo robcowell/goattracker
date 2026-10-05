@@ -1,0 +1,12 @@
+# Build output
+*.o
+/linux/goattrk2
+/linux/gt2reloc
+/linux/ins2snd2
+/linux/mod2sng
+/linux/sngspli2
+/src/bme/datafile
+/src/bme/dat2inc
+
+# Runtime output
+sidaudio.raw
