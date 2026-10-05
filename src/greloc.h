@@ -34,6 +34,10 @@ extern unsigned char pattmap[MAX_PATT];
 extern unsigned char instrmap[MAX_INSTR];
 extern unsigned char tablemap[MAX_TABLES][MAX_TABLELEN+1];
 extern int tableerror;
+extern char *playeroptname[];
+extern char packedsongname[];
+extern FILE *relocout;
+extern int relocsuccess;
 #endif
 
 void relocator(void);

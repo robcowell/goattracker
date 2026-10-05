@@ -1,16 +1,13 @@
 #ifndef GDISPLAY_H
 #define GDISPLAY_H
 
-#define CNORMAL 8
-#define CMUTE 3
-#define CEDIT 10
-#define CPLAYING 12
-#define CCOMMAND 7
-#define CTITLE 15
+#ifndef GDISPLAY_C
+extern int timemin;
+extern int timesec;
+extern int timeframe;
+#endif
 
-void printmainscreen(void);
-void displayupdate(void);
-void printstatus(void);
+void followplayupdate(void);
 void resettime(void);
 void incrementtime(void);
 

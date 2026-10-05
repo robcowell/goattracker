@@ -83,27 +83,29 @@ int nozerospeed;
 struct membuf src = STATIC_MEMBUF_INIT;
 struct membuf dest = STATIC_MEMBUF_INIT;
 
+// The packer runs non-interactively in both programs: the options come from
+// the globals (playerversion, playeradr, zeropageadr, fileformat) and the
+// output file from packedsongname. Messages go to STDOUT/STDERR, which the
+// editor redirects to a buffer it shows after packing.
 #ifdef GT2RELOC
-#ifdef __WIN32__
-extern FILE *STDOUT, *STDERR;
-#else
 #define STDOUT stdout
 #define STDERR stderr
-#endif
 extern char packedsongname[MAX_PATHNAME];
+#else
+FILE *relocout = NULL;
+char packedsongname[MAX_PATHNAME];
+#define STDOUT (relocout ? relocout : stdout)
+#define STDERR (relocout ? relocout : stderr)
+#endif
+int relocsuccess = 0;
 #define clearscreen()
 #define fliptoscreen()
 #define waitkeynoupdate()
-#define printtextc(x, y, b) fputs(b, STDERR)
+#define printtextc(x, y, b) (fputs(b, STDERR), fputc('\n', STDERR))
 #define printmainscreen()
-#endif
 
 void relocator(void)
 {
-#ifndef GT2RELOC
-  char packedsongname[MAX_FILENAME];
-  char packedfilter[MAX_FILENAME];
-#endif
   unsigned char *packeddata = NULL;
   char *playername = "player.s";
 
@@ -135,8 +137,6 @@ void relocator(void)
   int packedsize = 0;
 
   FILE *songhandle = NULL;
-  int selectdone;
-  int opt = 0;
   unsigned char speedcode[] = {0xa2,0x00,0x8e,0x04,0xdc,0xa2,0x00,0x8e,0x05,0xdc};
 
   int c,d,e;
@@ -182,6 +182,7 @@ void relocator(void)
   nocalculatedspeed = 1;
   nonormalspeed = 1;
   nozerospeed = 1;
+  relocsuccess = 0;
 
   stopsong();
 
@@ -510,82 +511,6 @@ void relocator(void)
     findtableduplicates(c);
 
   // Select playroutine options
-#ifndef GT2RELOC
-  clearscreen();
-  printblankc(0, 0, 15+16, MAX_COLUMNS);
-  if (!strlen(loadedsongfilename))
-    sprintf(textbuffer, "%s Packer/Relocator", programname);
-  else
-    sprintf(textbuffer, "%s Packer/Relocator - %s", programname, loadedsongfilename);
-  textbuffer[MAX_COLUMNS] = 0;
-  printtext(0, 0, 15+16, textbuffer);
-  printtext(1, 2, CTITLE, "SELECT PLAYROUTINE OPTIONS: (CURSORS=MOVE/CHANGE, ENTER=ACCEPT, ESC=CANCEL)");
-  selectdone = 0;
-  while (!selectdone)
-  {
-    for (c = 0; c < MAX_OPTIONS; c++)
-    {
-      int color = CNORMAL;
-      if (opt == c) color = CEDIT;
-
-      printtext(1, 3+c, color, playeroptname[c]);
-      if (playerversion & (PLAYER_BUFFERED << c))
-        printtext(24, 3+c, color, "Yes");
-      else
-        printtext(24, 3+c, color, "No ");
-    }
-    fliptoscreen();
-    waitkeynoupdate();
-
-    if (win_quitted)
-    {
-      exitprogram = 1;
-      goto PRCLEANUP;
-    }
-
-    switch(rawkey)
-    {
-      case KEY_LEFT:
-      case KEY_RIGHT:
-      case KEY_SPACE:
-      playerversion ^= (PLAYER_BUFFERED << opt);
-      if (opt)
-      {
-        if ((playerversion & PLAYER_SOUNDEFFECTS) || (playerversion & PLAYER_ZPGHOSTREGS) || (playerversion & PLAYER_FULLBUFFERED))
-          playerversion |= PLAYER_BUFFERED;
-      }
-      else
-      {
-        if (!(playerversion & PLAYER_BUFFERED))
-        {
-          playerversion &= ~PLAYER_SOUNDEFFECTS;
-          playerversion &= ~PLAYER_ZPGHOSTREGS;
-          playerversion &= ~PLAYER_FULLBUFFERED;
-        }
-      }
-      break;
-
-      case KEY_UP:
-      opt--;
-      if (opt < 0) opt = MAX_OPTIONS-1;
-      break;
-
-      case KEY_DOWN:
-      opt++;
-      if (opt >= MAX_OPTIONS) opt = 0;
-      break;
-
-      case KEY_ESC:
-      selectdone = -1;
-      break;
-
-      case KEY_ENTER:
-      selectdone = 1;
-      break;
-    }
-  }
-  if (selectdone == -1) goto PRCLEANUP;
-#endif
 
   // Disable optimizations if necessary
   if (playerversion & PLAYER_NOOPTIMIZATION)
@@ -934,136 +859,8 @@ void relocator(void)
   if (nopulse) pulsetblsize = 0;
   if (nofilter) filttblsize = 0;
 
-#ifdef GT2RELOC
   fprintf(STDOUT, "Player address:   $%04X\n", playeradr);
   fprintf(STDOUT, "Zeropage address: $%04X\n", zeropageadr);
-#else
-  sprintf(textbuffer, "SELECT START ADDRESS: (CURSORS=MOVE, ENTER=ACCEPT, ESC=CANCEL)");
-  printtext(1, 11, 15, textbuffer);
-
-  selectdone = 0;
-  while (!selectdone)
-  {
-    sprintf(textbuffer, "$%04X", playeradr);
-    printtext(1, 12, 10, textbuffer);
-
-    fliptoscreen();
-    waitkeynoupdate();
-
-    if (win_quitted)
-    {
-      exitprogram = 1;
-      goto PRCLEANUP;
-    }
-
-    switch(rawkey)
-    {
-      case KEY_LEFT:
-      playeradr -= 0x0400;
-      playeradr &= 0xff00;
-      break;
-
-      case KEY_UP:
-      playeradr += 0x0100;
-      playeradr &= 0xff00;
-      break;
-
-      case KEY_RIGHT:
-      playeradr += 0x0400;
-      playeradr &= 0xff00;
-      break;
-
-      case KEY_DOWN:
-      playeradr -= 0x0100;
-      playeradr &= 0xff00;
-      break;
-
-      case KEY_ESC:
-      selectdone = -1;
-      break;
-
-      case KEY_ENTER:
-      selectdone = 1;
-      break;
-    }
-  }
-
-  if (selectdone == -1) goto PRCLEANUP;
-
-  sprintf(textbuffer, "SELECT ZEROPAGE ADDRESS: (CURSORS=MOVE, ENTER=ACCEPT, ESC=CANCEL)");
-  printtext(1, 14, 15, textbuffer);
-
-  selectdone = 0;
-  while (!selectdone)
-  {
-    if (playerversion & PLAYER_ZPGHOSTREGS)
-    {
-      if (zeropageadr < 0x02) zeropageadr = 0xe5;
-      if (zeropageadr > 0xe5) zeropageadr = 0x02;
-    }
-    else
-    {
-      if (zeropageadr < 0x02) zeropageadr = 0xfe;
-      if (zeropageadr > 0xfe) zeropageadr = 0x02;
-    }
-
-    if (!(playerversion & PLAYER_ZPGHOSTREGS))
-    {
-      if (zeropageadr < 0x90)
-        sprintf(textbuffer, "$%02X-$%02X (Used by BASIC interpreter)    ", zeropageadr, zeropageadr+1);
-      if ((zeropageadr >= 0x90) && (zeropageadr < 0xfb))
-        sprintf(textbuffer, "$%02X-$%02X (Used by KERNAL routines)      ", zeropageadr, zeropageadr+1);
-      if ((zeropageadr >= 0xfb) && (zeropageadr < 0xfe))
-        sprintf(textbuffer, "$%02X-$%02X (Unused)                       ", zeropageadr, zeropageadr+1);
-      if (zeropageadr >= 0xfe)
-        sprintf(textbuffer, "$%02X-$%02X ($FF used by BASIC interpreter)", zeropageadr, zeropageadr+1);
-    }
-    else
-    {
-      sprintf(textbuffer, "$%02X-$%02X (ghostregs start at %02X)", zeropageadr, zeropageadr+26, zeropageadr);
-    }
-
-    printtext(1, 15, 10, textbuffer);
-
-    fliptoscreen();
-    waitkeynoupdate();
-
-    if (win_quitted)
-    {
-      exitprogram = 1;
-      goto PRCLEANUP;
-    }
-
-    switch(rawkey)
-    {
-      case KEY_LEFT:
-      zeropageadr -= 0x10;
-      break;
-
-      case KEY_UP:
-      zeropageadr++;
-      break;
-
-      case KEY_RIGHT:
-      zeropageadr += 0x10;
-      break;
-
-      case KEY_DOWN:
-      zeropageadr--;
-      break;
-
-      case KEY_ESC:
-      selectdone = -1;
-      break;
-
-      case KEY_ENTER:
-      selectdone = 1;
-      break;
-    }
-  }
-
-  if (selectdone == -1) goto PRCLEANUP;
-#endif
 
   // Validate frequencytable parameters
   if (lastnote < firstnote)
@@ -1420,7 +1217,6 @@ void relocator(void)
   }
 
   // Print results
-#ifdef GT2RELOC
   fprintf(STDOUT, "packing results:\n");
   fprintf(STDOUT, "Playroutine:     %d bytes\n", playersize);
   fprintf(STDOUT, "Songtable:       %d bytes\n", songtblsize);
@@ -1438,153 +1234,6 @@ void relocator(void)
       goto PRCLEANUP;
   }
 
-#else
-  clearscreen();
-  printblankc(0, 0, 15+16, MAX_COLUMNS);
-  if (!strlen(loadedsongfilename))
-    sprintf(textbuffer, "%s Packer/Relocator", programname);
-  else
-    sprintf(textbuffer, "%s Packer/Relocator - %s", programname, loadedsongfilename);
-  textbuffer[80] = 0;
-  printtext(0, 0, 15+16, textbuffer);
-
-  sprintf(textbuffer, "PACKING RESULTS:");
-  printtext(1, 2, 15, textbuffer);
-
-  sprintf(textbuffer, "Playroutine:     %d bytes", playersize);
-  printtext(1, 3, 7, textbuffer);
-  sprintf(textbuffer, "Songtable:       %d bytes", songtblsize);
-  printtext(1, 4, 7, textbuffer);
-  sprintf(textbuffer, "Song-orderlists: %d bytes", songdatasize);
-  printtext(1, 5, 7, textbuffer);
-  sprintf(textbuffer, "Patterntable:    %d bytes", patttblsize);
-  printtext(1, 6, 7, textbuffer);
-  sprintf(textbuffer, "Patterns:        %d bytes", pattdatasize);
-  printtext(1, 7, 7, textbuffer);
-  sprintf(textbuffer, "Instruments:     %d bytes", instrsize);
-  printtext(1, 8, 7, textbuffer);
-  sprintf(textbuffer, "Tables:          %d bytes", wavetblsize+pulsetblsize+filttblsize+speedtblsize);
-  printtext(1, 9, 7, textbuffer);
-  sprintf(textbuffer, "Total size:      %d bytes", packedsize);
-  printtext(1, 11, 7, textbuffer);
-  fliptoscreen();
-
-
-  // Now ask for fileformat
-  printtext(1, 13, CTITLE, "SELECT FORMAT TO SAVE IN: (CURSORS=MOVE, ENTER=ACCEPT, ESC=CANCEL)");
-
-  selectdone = 0;
-
-  while (!selectdone)
-  {
-    switch(fileformat)
-    {
-      case FORMAT_SID:
-      printtext(1, 14, CEDIT, "SID - SIDPlay music file format          ");
-      strcpy(packedfilter, "*.sid");
-      break;
-
-      case FORMAT_PRG:
-      printtext(1, 14, CEDIT, "PRG - C64 native format                  ");
-      strcpy(packedfilter, "*.prg");
-      break;
-
-      case FORMAT_BIN:
-      printtext(1, 14, CEDIT, "BIN - Raw binary format (no startaddress)");
-      strcpy(packedfilter, "*.bin");
-      break;
-    }
-
-    fliptoscreen();
-    waitkeynoupdate();
-
-    if (win_quitted)
-    {
-      exitprogram = 1;
-      goto PRCLEANUP;
-    }
-
-    switch(rawkey)
-    {
-      case KEY_LEFT:
-      case KEY_DOWN:
-      fileformat--;
-      if (fileformat < FORMAT_SID) fileformat = FORMAT_BIN;
-      break;
-
-      case KEY_RIGHT:
-      case KEY_UP:
-      fileformat++;
-      if (fileformat > FORMAT_BIN) fileformat = FORMAT_SID;
-      break;
-
-      case KEY_ESC:
-      selectdone = -1;
-      break;
-
-      case KEY_ENTER:
-      selectdone = 1;
-      break;
-    }
-  }
-  if (selectdone == -1) goto PRCLEANUP;
-
-  // By default, copy loaded song name up to the extension
-  memset(packedsongname, 0, sizeof packedsongname);
-  for (c = 0; c < strlen(loadedsongfilename); c++)
-  {
-    if (loadedsongfilename[c] == '.') break;
-    packedsongname[c] = loadedsongfilename[c];
-  }
-  switch (fileformat)
-  {
-    case FORMAT_PRG:
-    strcat(packedsongname, ".prg");
-    break;
-
-    case FORMAT_BIN:
-    strcat(packedsongname, ".bin");
-    break;
-
-    case FORMAT_SID:
-    strcat(packedsongname, ".sid");
-    break;
-  }
-
-  // Now ask for filename, retry if unsuccessful
-  while (!songhandle)
-  {
-    if (!fileselector(packedsongname, packedpath, packedfilter, "Save Music+Playroutine", 3))
-      goto PRCLEANUP;
-
-    if (strlen(packedsongname) < MAX_FILENAME-4)
-    {
-      int extfound = 0;
-      for (c = strlen(packedsongname)-1; c >= 0; c--)
-      {
-        if (packedsongname[c] == '.') extfound = 1;
-      }
-      if (!extfound)
-      {
-        switch (fileformat)
-        {
-          case FORMAT_PRG:
-          strcat(packedsongname, ".prg");
-          break;
-
-          case FORMAT_BIN:
-          strcat(packedsongname, ".bin");
-          break;
-
-          case FORMAT_SID:
-          strcat(packedsongname, ".sid");
-          break;
-        }
-      }
-    }
-    songhandle = fopen(packedsongname, "wb");
-  }
-#endif
 
   if (fileformat == FORMAT_PRG)
   {
@@ -1699,6 +1348,7 @@ void relocator(void)
 
   fwrite(packeddata, packedsize, 1, songhandle);
   fclose(songhandle);
+  relocsuccess = 1;
 
   PRCLEANUP:
   membuf_free(&src);
@@ -1707,9 +1357,6 @@ void relocator(void)
   if (pattwork) free(pattwork);
   if (songwork) free(songwork);
   if (instrwork) free(instrwork);
-  printmainscreen();
-  key = 0;
-  rawkey = 0;
 }
 
 int packpattern(unsigned char *dest, unsigned char *src, int rows)

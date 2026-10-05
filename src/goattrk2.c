@@ -24,8 +24,8 @@
 
 #include "goattrk2.h"
 #include "bme.h"
+#include "gui.h"
 
-int menu = 0;
 int editmode = EDIT_PATTERN;
 int recordmode = 1;
 int followplay = 0;
@@ -33,11 +33,13 @@ int hexnybble = -1;
 int stepsize = 4;
 int autoadvance = 0;
 int defaultpatternlength = 64;
-int cursorflash = 0;
-int cursorcolortable[] = {1,2,7,2};
-int exitprogram = 0;
-int eacolumn = 0;
-int eamode = 0;
+int soundinitfailed = 0;
+int starthelp = 0;
+
+// Current keypress, set by the GUI before it calls docommand()
+int key = 0;
+int rawkey = 0;
+int shiftpressed = 0;
 
 unsigned keypreset = KEY_TRACKER;
 unsigned playerversion = 0;
@@ -68,7 +70,8 @@ float basepitch = 0.0f;
 float equaldivisionsperoctave = 12.0f;
 int tuningcount = 0;
 double tuning[96];
-extern unsigned bigwindow;
+unsigned bigwindow = 1;
+int win_fullscreen = 0;
 
 char configbuf[MAX_PATHNAME];
 char loadedsongfilename[MAX_FILENAME];
@@ -119,17 +122,19 @@ char* usage[] = {
     "-Xxx Set window type (0 = window, 1 = fullscreen) DEFAULT=window",
     "-Yxx Path to a Scala tuning file .scl",
     "-Zxx Set random reSID write delay in cycles (0 = off) DEFAULT=off",
-    "-wxx Set window scale factor (1 = no scaling, 2 to 4 = 2 to 4 times bigger window) DEFAULT=1",
+    "-wxx Set text size (1 = normal, 2 to 4 = larger) DEFAULT=1",
     "-N   Use NTSC timing",
     "-P   Use PAL timing (DEFAULT)",
     "-W   Write sound output to a file SIDAUDIO.RAW",
     "-?   Show this info again",
-    "-??  Standalone online help window",
+    "-??  Open the online help window at startup",
 };
 
 int usagelen = (sizeof usage / sizeof usage[0]);
 
-int main(int argc, char **argv)
+// Load the configuration, parse the command line, start sound and load the
+// initial song. Returns -1 when the editor should start, or an exit status.
+int goattrk2_init(int argc, char **argv)
 {
   char filename[MAX_PATHNAME];
   FILE *configfile;
@@ -218,25 +223,15 @@ int main(int argc, char **argv)
         if (strcmp(argv[c], "--help"))
             break;
         case '?':
-        if(argv[c][2]=='?')
+        if (argv[c][2] == '?')
         {
-          if (!initscreen())
-            return EXIT_FAILURE;
-          onlinehelp(1,0);
-          return EXIT_SUCCESS;
+          starthelp = 1;
+          break;
         }
-#ifdef __WIN32__
-        if (!initscreen())
-          return EXIT_FAILURE;
-        for (y = 0; y < usagelen; ++y)
-          printtext(0,y,15,usage[y]);
-        waitkeynoupdate();
-#else
         for (y = 0; y < usagelen; ++y)
           printf("%s\n", usage[y]);
-#endif
         return EXIT_SUCCESS;
-        
+
         case 'Z':
         sscanf(&argv[c][2], "%u", &residdelay);
         break;
@@ -404,33 +399,32 @@ int main(int argc, char **argv)
     setspecialnotenames();
   }
 
-  // Set screenmode
-  if (!initscreen())
-    return EXIT_FAILURE;
+  // SDL provides the audio output only; the GUI turns SIGINT/SIGTERM into a
+  // normal quit
+  SDL_SetHint(SDL_HINT_NO_SIGNAL_HANDLERS, "1");
+  if (SDL_Init(SDL_INIT_AUDIO | SDL_INIT_TIMER) < 0) soundinitfailed = 1;
+  else atexit(SDL_Quit);
 
   // Reset channels/song
   initchannels();
   clearsong(1,1,1,1,1);
 
   // Init sound
-  if (!sound_init(b, mr, writer, hardsid, sidmodel, ntsc, multiplier, catweasel, interpolate, customclockrate))
-  {
-    printtextc(MAX_ROWS/2-1,15,"Sound init failed. Press any key to run without sound (notice that song timer won't start)");
-    waitkeynoupdate();
-  }
+  if ((soundinitfailed) || (!sound_init(b, mr, writer, hardsid, sidmodel, ntsc, multiplier, catweasel, interpolate, customclockrate)))
+    soundinitfailed = 1;
 
   // Load song if applicable
   if (strlen(songfilename)) loadsong();
 
-  // Start editor mainloop
-  printmainscreen();
-  while (!exitprogram)
-  {
-    waitkeymouse();
-    docommand();
-  }
+  return -1;
+}
 
-  // Shutdown sound output now
+// Stop sound and save the configuration
+void goattrk2_shutdown(void)
+{
+  char filename[MAX_PATHNAME];
+  FILE *configfile;
+
   sound_uninit();
 
   // Save configuration
@@ -534,62 +528,6 @@ int main(int argc, char **argv)
     scalatuningfilepath);
     fclose(configfile);
   }
-
-  // Exit
-  return EXIT_SUCCESS;
-}
-
-void waitkey(void)
-{
-  for (;;)
-  {
-    displayupdate();
-    getkey();
-    if ((rawkey) || (key)) break;
-    if (win_quitted) break;
-  }
-
-  converthex();
-}
-
-void waitkeymouse(void)
-{
-  for (;;)
-  {
-    displayupdate();
-    getkey();
-    if ((rawkey) || (key)) break;
-    if (win_quitted) break;
-    if (mouseb) break;
-  }
-
-  converthex();
-}
-
-void waitkeymousenoupdate(void)
-{
-  for (;;)
-  {
-      fliptoscreen();
-    getkey();
-    if ((rawkey) || (key)) break;
-    if (win_quitted) break;
-    if (mouseb) break;
-  }
-
-  converthex();
-}
-
-void waitkeynoupdate(void)
-{
-  for (;;)
-  {
-      fliptoscreen();
-    getkey();
-    if ((rawkey) || (key)) break;
-    if ((mouseb) && (!prevmouseb)) break;
-    if (win_quitted) break;
-  }
 }
 
 void converthex()
@@ -616,9 +554,6 @@ void converthex()
 
 void docommand(void)
 {
-  // "GUI" operation :)
-  mousecommands();
-
   // Mode-specific commands
   switch(editmode)
   {
@@ -645,281 +580,6 @@ void docommand(void)
 
   // General commands
   generalcommands();
-}
-
-void mousecommands(void)
-{
-  int c;
-
-  if (!mouseb) return;
-
-  // Pattern editpos & pattern number selection
-  for (c = 0; c < MAX_CHN; c++)
-  {
-    if ((mousey == 2) && (mousex >= 13 + c*15) && (mousex <= 14 + c*15))
-    {
-        if ((!prevmouseb) || (mouseheld > HOLDDELAY))
-        {
-        if (mouseb & MOUSEB_LEFT) 
-        {
-          epchn = c;
-          nextpattern();
-        }
-        if (mouseb & MOUSEB_RIGHT)
-        {
-          epchn = c;
-          prevpattern();
-        }
-      }
-    }
-    else
-    {
-      if ((mousey >= 2) && (mousey <= 34) && (mousex >= 6 + c*15) && (mousex <= 14 + c*15))
-      {
-        int x = mousex-6-c*15;
-        int newpos = mousey-3+epview;
-        if (newpos < 0) newpos = 0;
-        if (newpos > pattlen[epnum[epchn]]) newpos = pattlen[epnum[epchn]];
-
-        editmode = EDIT_PATTERN;
-
-        if ((mouseb & (MOUSEB_RIGHT|MOUSEB_MIDDLE)) && (!prevmouseb))
-        {
-          if ((epmarkchn != c) || (newpos != epmarkend))
-          {
-            epmarkchn = c;
-            epmarkstart = epmarkend = newpos;
-          }
-        }
-
-        if (mouseb & MOUSEB_LEFT)
-        {
-          epchn = c;
-          if (x < 4) epcolumn = 0;
-          if (x >= 4) epcolumn = x-3;
-        }
-
-        if (!prevmouseb)
-        {
-          if (mouseb & MOUSEB_LEFT)
-            eppos = newpos;
-        }
-        else
-        {
-            if (mouseb & MOUSEB_LEFT)
-            {
-            if (mousey == 2) eppos--;
-            if (mousey == 34) eppos++;
-          }
-        }
-        if (eppos < 0) eppos = 0;
-        if (eppos > pattlen[epnum[epchn]]) eppos = pattlen[epnum[epchn]];
-
-        if (mouseb & (MOUSEB_RIGHT|MOUSEB_MIDDLE)) epmarkend = newpos;
-      }
-    }
-  }
-
-  // Song editpos & songnumber selection
-  if ((mousey >= 3) && (mousey <= 8) && (mousex >= 40+10))
-  {
-    int newpos = esview + (mousex-44-10) / 3;
-    int newcolumn = (mousex-44-10) % 3;
-    int newchn = mousey - 3;
-    if (newcolumn < 0) newcolumn = 0;
-    if (newcolumn > 1) newcolumn = 1;
-    if (newpos < 0)
-    {
-      newpos = 0;
-      newcolumn = 0;
-    }
-    if (newpos == songlen[esnum][eschn])
-    {
-      newpos++;
-      newcolumn = 0;
-    }
-    if (newpos > songlen[esnum][eschn]+1)
-    {
-      newpos = songlen[esnum][eschn] + 1;
-      newcolumn = 1;
-    }
-
-    editmode = EDIT_ORDERLIST;
-
-    if ((mouseb & (MOUSEB_RIGHT|MOUSEB_MIDDLE)) && (!prevmouseb) && (newpos < songlen[esnum][eschn]))
-    {
-      if ((esmarkchn != newchn) || (newpos != esmarkend))
-      {
-        esmarkchn = newchn;
-        esmarkstart = esmarkend = newpos;
-      }
-    }
-
-    if (mouseb & MOUSEB_LEFT)
-    {
-      eschn = newchn;
-      eseditpos = newpos;
-      escolumn = newcolumn;
-    }
-
-    if ((mouseb & (MOUSEB_RIGHT|MOUSEB_MIDDLE)) && (newpos < songlen[esnum][eschn])) esmarkend = newpos;
-  }
-  if (((!prevmouseb) || (mouseheld > HOLDDELAY)) && (mousey == 2) && (mousex >= 63+10) && (mousex <= 64+10))
-  {
-    if (mouseb & MOUSEB_LEFT) nextsong();
-    if (mouseb & MOUSEB_RIGHT) prevsong();
-  }
-
-  // Instrument editpos & instrument number selection
-  if ((mousey >= 8) && (mousey <= 12) && (mousex >= 56+10) && (mousex <= 57+10))
-  {
-    editmode = EDIT_INSTRUMENT;
-    eipos = mousey-8;
-    eicolumn = mousex-56-10;
-  }
-  if ((mousey >= 8) && (mousey <= 11) && (mousex >= 76+10) && (mousex <= 77+10))
-  {
-    editmode = EDIT_INSTRUMENT;
-    eipos = mousey-8+5;
-    eicolumn = mousex-76-10;
-  }
-  if ((mousey == 7) && (mousex >= 60+10))
-  {
-    editmode = EDIT_INSTRUMENT;
-    eipos = 9;
-  }
-  if (((!prevmouseb) || (mouseheld > HOLDDELAY)) && (mousey == 7) && (mousex >= 56+10) && (mousex <= 57+10))
-  {
-    if (mouseb & MOUSEB_LEFT) nextinstr();
-    if (mouseb & MOUSEB_RIGHT) previnstr();
-  }
-
-
-  // Table editpos
-  for (c = 0; c < MAX_TABLES; c++)
-  {
-    if ((mousey >= 14) && (mousey <= 30) && (mousex >= 43+10+c*10) && (mousex <= 47+10+c*10))
-    {
-      int newpos = mousey-15+etview[etnum];
-      if (newpos < 0) newpos = 0;
-      if (newpos >= MAX_TABLELEN) newpos = MAX_TABLELEN-1;
-
-      editmode = EDIT_TABLES;
-
-      if ((mouseb & (MOUSEB_RIGHT|MOUSEB_MIDDLE)) && (!prevmouseb))
-      {
-        if ((etmarknum != etnum) || (newpos != etmarkend))
-        {
-          etmarknum = c;
-          etmarkstart = etmarkend = newpos;
-        }
-      }
-      if (mouseb & MOUSEB_LEFT)
-      {
-        etnum = c;
-        etpos = mousey-15+etview[etnum];
-        etcolumn = mousex-43-10-c*10;
-      }
-      if (etcolumn >= 2) etcolumn--;
-      if (etpos < 0) etpos = 0;
-      if (etpos > MAX_TABLELEN-1) etpos = MAX_TABLELEN-1;
-
-      if (mouseb & (MOUSEB_RIGHT|MOUSEB_MIDDLE)) etmarkend = newpos;
-    }
-  }
-
-  // Name editpos
-  if ((mousey >= 31) && (mousey <= 33) && (mousex >= 47+10))
-  {
-    editmode = EDIT_NAMES;
-    enpos = mousey - 31;
-  }
-
-  // Status panel
-  if ((!prevmouseb) && (mousex == 7) && (mousey == 23+3+9))
-  {
-    if (mouseb & (MOUSEB_LEFT))
-      if (epoctave < 7) epoctave++;
-    if (mouseb & (MOUSEB_RIGHT))
-      if (epoctave > 0) epoctave--;
-  }
-  if ((!prevmouseb) && (mousex <= 7) && (mousey == 24+3+9))
-  {
-    recordmode ^= 1;
-  }
-  for (c = 0; c < MAX_CHN; c++)
-  {
-    if ((!prevmouseb) && (mousey >= 23+3+9) && (mousex >= 80 + 7*c) && (mousex <= 85 + 7*c))
-      mutechannel(c);
-  }
-
-  // Titlebar actions
-  if (!menu)
-  {
-    if ((mousey == 0) && (!prevmouseb) && (mouseb == MOUSEB_LEFT))
-    {
-      if ((mousex >= 40+10) && (mousex <= 41+10))
-      {
-        usefinevib ^= 1;
-      }
-      if ((mousex >= 43+10) && (mousex <= 44+10))
-      {
-        optimizepulse ^= 1;
-      }
-      if ((mousex >= 46+10) && (mousex <= 47+10))
-      {
-        optimizerealtime ^= 1;
-      }
-      if ((mousex >= 49+10) && (mousex <= 52+10))
-      {
-        ntsc ^= 1;
-        sound_init(b, mr, writer, hardsid, sidmodel, ntsc, multiplier, catweasel, interpolate, customclockrate);
-      }
-      if ((mousex >= 54+10) && (mousex <= 57+10))
-      {
-        sidmodel ^= 1;
-        sound_init(b, mr, writer, hardsid, sidmodel, ntsc, multiplier, catweasel, interpolate, customclockrate);
-      }
-      if ((mousex >= 62+10) && (mousex <= 65+10)) editadsr();
-      if ((mousex >= 67+10) && (mousex <= 68+10)) prevmultiplier();
-      if ((mousex >= 69+10) && (mousex <= 70+10)) nextmultiplier();
-    }
-  }
-  else
-  {
-    if ((!mousey) && (mouseb & MOUSEB_LEFT) && (!(prevmouseb & MOUSEB_LEFT)))
-    {
-      if ((mousex >= 0) && (mousex <= 5))
-      {
-        initsong(esnum, PLAY_BEGINNING);
-        followplay = shiftpressed;
-      }
-      if ((mousex >= 7) && (mousex <= 15))
-      {
-        initsong(esnum, PLAY_POS);
-        followplay = shiftpressed;
-      }
-      if ((mousex >= 17) && (mousex <= 26))
-      {
-        initsong(esnum, PLAY_PATTERN);
-        followplay = shiftpressed;
-      }
-      if ((mousex >= 28) && (mousex <= 33))
-        stopsong();
-      if ((mousex >= 35) && (mousex <= 40))
-        load();
-      if ((mousex >= 42) && (mousex <= 47))
-        save();
-      if ((mousex >= 49) && (mousex <= 57))
-        relocator();
-      if ((mousex >= 59) && (mousex <= 64))
-        onlinehelp(0,0);
-      if ((mousex >= 66) && (mousex <= 72))
-        clear();
-      if ((mousex >= 74) && (mousex <= 79))
-        quit();
-    }
-  }
 }
 
 void generalcommands(void)
@@ -1006,14 +666,13 @@ void generalcommands(void)
     break;
 
   }
-  if (win_quitted) exitprogram = 1;
   switch(rawkey)
   {
     case KEY_ESC:
     if (!shiftpressed)
-      quit();
+      ui_quit();
     else
-      clear();
+      ui_clear();
     break;
 
     case KEY_KPMULTIPLY:
@@ -1037,7 +696,7 @@ void generalcommands(void)
     break;
 
     case KEY_F12:
-      onlinehelp(0, shiftpressed);
+    ui_help(shiftpressed);
     break;
 
     case KEY_TAB:
@@ -1089,7 +748,7 @@ void generalcommands(void)
       else
         editmode = EDIT_INSTRUMENT;
     }
-    else editadsr();
+    else ui_editadsr();
     break;
 
     case KEY_F8:
@@ -1103,275 +762,31 @@ void generalcommands(void)
     break;
 
     case KEY_F9:
-    relocator();
+    ui_relocator();
     break;
 
     case KEY_F10:
-    load();
+    ui_load(shiftpressed);
     break;
 
     case KEY_F11:
-    save();
+    ui_save();
     break;
   }
 }
 
-void load(void)
+// Clear the chosen parts of the song (what Shift+ESC offers)
+void doclear(int cs, int cp, int ci, int ct, int cn, int newpatternlength)
 {
-  if ((editmode != EDIT_INSTRUMENT) && (editmode != EDIT_TABLES))
+  if (cp)
   {
-    if (!shiftpressed)
-    {
-      if (fileselector(songfilename, songpath, songfilter, "LOAD SONG", 0))
-        loadsong();
-    }
-    else
-    {
-      if (fileselector(songfilename, songpath, songfilter, "MERGE SONG", 0))
-        mergesong();
-    }
+    if (newpatternlength < 1) newpatternlength = 1;
+    if (newpatternlength > MAX_PATTROWS) newpatternlength = MAX_PATTROWS;
+    defaultpatternlength = newpatternlength;
   }
-  else
-  {
-    if (einum)
-    {
-      if (fileselector(instrfilename, instrpath, instrfilter, "LOAD INSTRUMENT", 0))
-        loadinstrument();
-    }
-  }
-  key = 0;
-  rawkey = 0;
-}
-
-void save(void)
-{
-  if ((editmode != EDIT_INSTRUMENT) && (editmode != EDIT_TABLES))
-  {
-    int done = 0;
-
-    // Repeat until quit or save successful
-    while (!done)
-    {
-      if (strlen(loadedsongfilename)) strcpy(songfilename, loadedsongfilename);
-      if (fileselector(songfilename, songpath, songfilter, "SAVE SONG", 3))
-        done = savesong();
-      else done = 1;
-    }
-  }
-  else
-  {
-    if (einum)
-    {
-      int done = 0;
-      int useinstrname = 0;
-      char tempfilename[MAX_FILENAME];
-
-      // Repeat until quit or save successful
-      while (!done)
-      {
-        if ((!strlen(instrfilename)) && (strlen(instr[einum].name)))
-        {
-          useinstrname = 1;
-          strcpy(instrfilename, instr[einum].name);
-          strcat(instrfilename, ".ins");
-          strcpy(tempfilename, instrfilename);
-        }
-
-        if (fileselector(instrfilename, instrpath, instrfilter, "SAVE INSTRUMENT", 3))
-          done = saveinstrument();
-        else done = 1;
-
-        if (useinstrname)
-        {
-          if (!strcmp(tempfilename, instrfilename))
-            memset(instrfilename, 0, sizeof instrfilename);
-        }
-      }
-    }
-  }
-  key = 0;
-  rawkey = 0;
-}
-
-void quit(void)
-{
-  if ((!shiftpressed) || (mouseb))
-  {
-    printtextcp(49, 36, 15, "Really Quit (y/n)?");
-    waitkey();
-    printblank(20, 36, 58);
-    if ((key == 'y') || (key == 'Y')) exitprogram = 1;
-  }
-  key = 0;
-  rawkey = 0;
-}
-
-void clear(void)
-{
-  int cs = 0;
-  int cp = 0;
-  int ci = 0;
-  int ct = 0;
-  int cn = 0;
-
-  printtextcp(49, 36, 15, "Optimize everything (y/n)?");
-  waitkey();
-  printblank(20, 36, 58);
-  if ((key == 'y') || (key == 'Y'))
-  {
-    optimizeeverything(1, 1);
-    key = 0;
-    rawkey = 0;
-    return;
-  }
-
-  printtextcp(49, 36, 15, "Clear orderlists (y/n)?");
-  waitkey();
-  printblank(20, 36, 58);
-  if ((key == 'y') || (key == 'Y')) cs = 1;
-
-  printtextcp(49, 36, 15, "Clear patterns (y/n)?");
-  waitkey();
-  printblank(20, 36, 58);
-  if ((key == 'y') || (key == 'Y')) cp = 1;
-
-  printtextcp(49, 36, 15, "Clear instruments (y/n)?");
-  waitkey();
-  printblank(20, 36, 58);
-  if ((key == 'y') || (key == 'Y')) ci = 1;
-
-  printtextcp(49, 36, 15, "Clear tables (y/n)?");
-  waitkey();
-  printblank(20, 36, 58);
-  if ((key == 'y') || (key == 'Y')) ct = 1;
-
-  printtextcp(49, 36, 15, "Clear songname (y/n)?");
-  waitkey();
-  printblank(20, 36, 58);
-  if ((key == 'y') || (key == 'Y')) cn = 1;
-
-  if (cp == 1)
-  {
-    int selectdone = 0;
-    int olddpl = defaultpatternlength;
-
-    printtext(40, 36, 15,"Pattern length:");
-    while (!selectdone)
-    {
-      sprintf(textbuffer, "%02d ", defaultpatternlength);
-      printtext(55, 36, 15, textbuffer);
-      waitkey();
-      switch(rawkey)
-      {
-        case KEY_LEFT:
-        defaultpatternlength -= 7;
-        case KEY_DOWN:
-        defaultpatternlength--;
-        if (defaultpatternlength < 1) defaultpatternlength = 1;
-        break;
-
-        case KEY_RIGHT:
-        defaultpatternlength += 7;
-        case KEY_UP:
-        defaultpatternlength++;
-        if (defaultpatternlength > MAX_PATTROWS) defaultpatternlength = MAX_PATTROWS;
-        break;
-
-        case KEY_ESC:
-        defaultpatternlength = olddpl;
-        selectdone = 1;
-        break;
-
-        case KEY_ENTER:
-        selectdone = 1;
-        break;
-      }
-    }
-    printblank(20, 36, 58);
-  }
-
   if (cs | cp | ci | ct | cn)
     memset(songfilename, 0, sizeof songfilename);
   clearsong(cs, cp, ci, ct, cn);
-
-  key = 0;
-  rawkey = 0;
-}
-
-void editadsr(void)
-{
-  eamode = 1;
-  eacolumn = 0;
-
-  for (;;)
-  {
-    waitkeymouse();
-
-    if (win_quitted)
-    {
-      exitprogram = 1;
-      key = 0;
-      rawkey = 0;
-      return;
-    }
-
-    if (hexnybble >= 0)
-    {
-      switch(eacolumn)
-      {
-        case 0:
-        adparam &= 0x0fff;
-        adparam |= hexnybble << 12;
-        break;
-
-        case 1:
-        adparam &= 0xf0ff;
-        adparam |= hexnybble << 8;
-        break;
-
-        case 2:
-        adparam &= 0xff0f;
-        adparam |= hexnybble << 4;
-        break;
-
-        case 3:
-        adparam &= 0xfff0;
-        adparam |= hexnybble;
-        break;
-      }
-      eacolumn++;
-    }
-
-    switch(rawkey)
-    {
-      case KEY_F7:
-      if (!shiftpressed) break;
-
-      case KEY_ESC:
-      case KEY_ENTER:
-      case KEY_TAB:
-      eamode = 0;
-      key = 0;
-      rawkey = 0;
-      return;
-
-      case KEY_BACKSPACE:
-      if (!eacolumn) break;
-      case KEY_LEFT:
-      eacolumn--;
-      break;
-
-      case KEY_RIGHT:
-      eacolumn++;
-    }
-    eacolumn &= 3;
-
-    if ((mouseb) && (!prevmouseb))
-    {
-      eamode = 0;
-      return;
-    }
-  }
 }
 
 void getparam(FILE *handle, unsigned *value)

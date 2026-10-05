@@ -25,7 +25,11 @@
 #include "goattrk2.h"
 #include "bme.h"
 
-int menu = 0;
+// The editor modules linked into gt2reloc read the current keypress
+int key = 0;
+int rawkey = 0;
+int shiftpressed = 0;
+
 int editmode = EDIT_PATTERN;
 int recordmode = 1;
 int followplay = 0;
@@ -33,11 +37,6 @@ int hexnybble = -1;
 int stepsize = 4;
 int autoadvance = 0;
 int defaultpatternlength = 64;
-int cursorflash = 0;
-int cursorcolortable[] = {1,2,7,2};
-int exitprogram = 0;
-int eacolumn = 0;
-int eamode = 0;
 
 unsigned keypreset = KEY_TRACKER;
 unsigned playerversion = 0;
@@ -348,10 +347,6 @@ int main(int argc, char **argv)
 
   // Exit
   return 0;
-}
-
-void waitkeymousenoupdate(void)
-{
 }
 
 void getparam(FILE *handle, unsigned *value)
