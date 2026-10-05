@@ -56,8 +56,13 @@ $(PREFIX)sngspli2$(SUFFIX): sngspli2.o bme/bme_end.o
 	$(CC) -o $@ $^
 	strip $@
 
-bme/datafile bme/dat2inc:
-	$(MAKE) -C bme
+# Host tools that build the embedded data file (one rule each, so that
+# parallel builds don't run two sub-makes at once)
+bme/datafile:
+	$(MAKE) -C bme datafile
+
+bme/dat2inc:
+	$(MAKE) -C bme dat2inc
 
 goattrk2.dat: bme/datafile player.s altplayer.s chargen.bin palette.bin cursor.bin bcursor.bin goattrk2.bmp goattrk2.seq
 	./bme/datafile $@ goattrk2.seq
