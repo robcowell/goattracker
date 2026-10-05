@@ -148,37 +148,111 @@ static int checkfile(const char *path, const char *ident, const char *what)
   return 0;
 }
 
+// Action to continue with once the song has been saved (from the
+// save/discard prompt)
+static void (*aftersave)(void) = NULL;
+
 static void onsongopened(const char *path, gpointer data)
 {
   char message[MAX_PATHNAME + 32];
 
   if (!checkfile(path, "GTS", "song")) return;
   if (!splitpath(path, songpath, songfilename)) return;
-  if (GPOINTER_TO_INT(data)) mergesong();
-  else loadsong();
+  if (GPOINTER_TO_INT(data))
+  {
+    // Merging adds to the song, so it can be undone
+    mergesong();
+    undo_checkpoint(0);
+  }
+  else
+  {
+    loadsong();
+    undo_reset();
+  }
   snprintf(message, sizeof message, "%s %s", GPOINTER_TO_INT(data) ? "Merged" : "Loaded", ui_toutf8(songfilename));
   ui_toast(message);
   ui_refresh();
 }
 
+static void choosesongtoopen(void)
+{
+  choosefile("Open Song", songpath, songfilename, songfilter, "GoatTracker Songs", 0, onsongopened, GINT_TO_POINTER(0));
+}
+
 void ui_loadsong(int merge)
 {
-  choosefile(merge ? "Merge Song" : "Open Song", songpath, songfilename, songfilter, "GoatTracker Songs",
-    0, onsongopened, GINT_TO_POINTER(merge));
+  if (merge)
+    choosefile("Merge Song", songpath, songfilename, songfilter, "GoatTracker Songs", 0, onsongopened, GINT_TO_POINTER(1));
+  else
+  {
+    // Opening replaces the song and its undo history
+    undo_checkpoint(0);
+    if (undo_isdirty()) ui_confirmdiscard(choosesongtoopen);
+    else choosesongtoopen();
+  }
 }
 
 static void onsongsaved(const char *path, gpointer data)
 {
+  void (*proceed)(void) = aftersave;
+
+  aftersave = NULL;
   if (!splitpath(path, songpath, songfilename)) return;
-  if (savesong()) ui_toast("Song saved");
-  else alert("Could Not Save the Song", "The file could not be written.");
-  ui_refresh();
+  if (savesong())
+  {
+    undo_marksaved();
+    ui_toast("Song saved");
+    ui_refresh();
+    if (proceed) proceed();
+  }
+  else
+  {
+    alert("Could Not Save the Song", "The file could not be written.");
+    ui_refresh();
+  }
 }
 
 void ui_savesong(void)
 {
+  aftersave = NULL;
   if (strlen(loadedsongfilename)) strcpy(songfilename, loadedsongfilename);
   choosefile("Save Song", songpath, songfilename, songfilter, "GoatTracker Songs", 1, onsongsaved, NULL);
+}
+
+//
+// Unsaved changes
+//
+
+static void ondiscardresponse(AdwAlertDialog *dialog, const char *response, gpointer data)
+{
+  void (*proceed)(void) = data;
+
+  if (!strcmp(response, "discard")) proceed();
+  else if (!strcmp(response, "save"))
+  {
+    ui_savesong();
+    // The save dialog may still be cancelled; only continue after saving
+    aftersave = proceed;
+  }
+}
+
+// Ask whether to save the song before an action that would lose it
+void ui_confirmdiscard(void (*proceed)(void))
+{
+  char heading[MAX_FILENAME + 32];
+  AdwDialog *dialog;
+
+  snprintf(heading, sizeof heading, "Save Changes to “%s”?",
+    strlen(loadedsongfilename) ? ui_toutf8(loadedsongfilename) : "Untitled");
+  dialog = adw_alert_dialog_new(heading, "Unsaved changes will be lost if you don't save them.");
+  adw_alert_dialog_add_responses(ADW_ALERT_DIALOG(dialog), "cancel", "Cancel",
+    "discard", "Discard", "save", "Save…", NULL);
+  adw_alert_dialog_set_response_appearance(ADW_ALERT_DIALOG(dialog), "discard", ADW_RESPONSE_DESTRUCTIVE);
+  adw_alert_dialog_set_response_appearance(ADW_ALERT_DIALOG(dialog), "save", ADW_RESPONSE_SUGGESTED);
+  adw_alert_dialog_set_default_response(ADW_ALERT_DIALOG(dialog), "save");
+  adw_alert_dialog_set_close_response(ADW_ALERT_DIALOG(dialog), "cancel");
+  g_signal_connect(dialog, "response", G_CALLBACK(ondiscardresponse), proceed);
+  adw_dialog_present(dialog, GTK_WIDGET(mainwindow));
 }
 
 static void oninstrumentopened(const char *path, gpointer data)
@@ -186,6 +260,7 @@ static void oninstrumentopened(const char *path, gpointer data)
   if (!checkfile(path, "GTI", "instrument")) return;
   if (!splitpath(path, instrpath, instrfilename)) return;
   loadinstrument();
+  undo_checkpoint(0);
   ui_toast("Instrument loaded");
   ui_refresh();
 }
@@ -249,7 +324,15 @@ static void onquitresponse(AdwAlertDialog *dialog, const char *response, gpointe
 
 void ui_quit(void)
 {
-  AdwDialog *dialog = adw_alert_dialog_new("Quit GoatTracker?", "Unsaved changes to the song will be lost.");
+  AdwDialog *dialog;
+
+  undo_checkpoint(0);
+  if (undo_isdirty())
+  {
+    ui_confirmdiscard(ui_quitnow);
+    return;
+  }
+  dialog = adw_alert_dialog_new("Quit GoatTracker?", NULL);
 
   adw_alert_dialog_add_responses(ADW_ALERT_DIALOG(dialog), "cancel", "Cancel", "quit", "Quit", NULL);
   adw_alert_dialog_set_response_appearance(ADW_ALERT_DIALOG(dialog), "quit", ADW_RESPONSE_DESTRUCTIVE);
@@ -280,6 +363,9 @@ static void onclearresponse(AdwAlertDialog *dialog, const char *response, gpoint
     doclear(parts[0], parts[1], parts[2], parts[3], parts[4],
       (int)gtk_spin_button_get_value(GTK_SPIN_BUTTON(clearlength)));
   }
+  // Both can be undone
+  undo_checkpoint(0);
+  panels_syncall();
   ui_refresh();
 }
 

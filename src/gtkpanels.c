@@ -25,6 +25,13 @@ static GtkWidget *instrtitle;
 static GtkWidget *songentries[3];
 static GtkWidget *envelopearea;
 static int syncing = 0;
+static int forcesync = 0;
+
+// Undo coalescing keys: repeated edits of one field of one instrument (or
+// one song text) form a single undo step
+#define KEY_INSTRFIELD(field) ((1 << 16) | ((field) << 8) | einum)
+#define KEY_INSTRNAME ((2 << 16) | einum)
+#define KEY_SONGTEXT(n) ((3 << 16) | (n))
 
 static int getfield(int field)
 {
@@ -116,6 +123,8 @@ static void onfieldchanged(GtkSpinButton *spin, gpointer data)
 {
   if ((syncing) || (!einum)) return;
   setfield(GPOINTER_TO_INT(data), (int)gtk_spin_button_get_value(spin));
+  undo_checkpoint(KEY_INSTRFIELD(GPOINTER_TO_INT(data)));
+  ui_edited();
   gtk_widget_queue_draw(envelopearea);
   grid_redraw();
 }
@@ -124,6 +133,8 @@ static void onadsrchanged(GtkRange *range, gpointer data)
 {
   if ((syncing) || (!einum)) return;
   setfield(GPOINTER_TO_INT(data), (int)gtk_range_get_value(range));
+  undo_checkpoint(KEY_INSTRFIELD(GPOINTER_TO_INT(data)));
+  ui_edited();
   gtk_widget_queue_draw(envelopearea);
 }
 
@@ -136,6 +147,8 @@ static void oninstrnamechanged(GtkEditable *editable, gpointer data)
 {
   if ((syncing) || (!einum)) return;
   ui_fromutf8(instr[einum].name, gtk_editable_get_text(editable), MAX_INSTRNAMELEN);
+  undo_checkpoint(KEY_INSTRNAME);
+  ui_edited();
   panels_sync();
 }
 
@@ -332,6 +345,7 @@ GtkWidget *panel_instruments_new(void)
 
   instrnameentry = gtk_entry_new();
   gtk_entry_set_max_length(GTK_ENTRY(instrnameentry), MAX_INSTRNAMELEN - 1);
+  gtk_editable_set_enable_undo(GTK_EDITABLE(instrnameentry), FALSE);
   g_signal_connect(instrnameentry, "changed", G_CALLBACK(oninstrnamechanged), NULL);
   gtk_grid_attach(GTK_GRID(grid), instrnameentry, 0, row++, 3, 1);
 
@@ -390,6 +404,8 @@ static void onsongtextchanged(GtkEditable *editable, gpointer data)
 
   if (syncing) return;
   ui_fromutf8(fields[GPOINTER_TO_INT(data)], gtk_editable_get_text(editable), MAX_STR);
+  undo_checkpoint(KEY_SONGTEXT(GPOINTER_TO_INT(data)));
+  ui_edited();
 }
 
 GtkWidget *panel_songinfo_new(void)
@@ -412,6 +428,7 @@ GtkWidget *panel_songinfo_new(void)
     gtk_label_set_xalign(GTK_LABEL(label), 0);
     songentries[c] = gtk_entry_new();
     gtk_entry_set_max_length(GTK_ENTRY(songentries[c]), MAX_STR - 1);
+    gtk_editable_set_enable_undo(GTK_EDITABLE(songentries[c]), FALSE);
     gtk_widget_set_hexpand(songentries[c], TRUE);
     g_signal_connect(songentries[c], "changed", G_CALLBACK(onsongtextchanged), GINT_TO_POINTER(c));
     gtk_grid_attach(GTK_GRID(grid), label, 0, c, 1, 1);
@@ -429,8 +446,9 @@ GtkWidget *panel_songinfo_new(void)
 
 static void settext(GtkWidget *editable, const char *text)
 {
-  // Leave a field alone while the user is typing in it
-  if (gtk_widget_has_focus(editable) || (gtk_widget_get_focus_child(editable))) return;
+  // Leave a field alone while the user is typing in it, unless the song
+  // changed underneath it (undo)
+  if ((!forcesync) && (gtk_widget_has_focus(editable) || (gtk_widget_get_focus_child(editable)))) return;
   if (strcmp(gtk_editable_get_text(GTK_EDITABLE(editable)), text))
     gtk_editable_set_text(GTK_EDITABLE(editable), text);
 }
@@ -476,4 +494,12 @@ void panels_sync(void)
     settext(songentries[c], ui_toutf8(fields[c]));
 
   syncing = 0;
+}
+
+// Update every field, including the one being typed in (after undo/redo)
+void panels_syncall(void)
+{
+  forcesync = 1;
+  panels_sync();
+  forcesync = 0;
 }

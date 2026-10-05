@@ -33,6 +33,8 @@ static char *genkeys[] = {
   "DEL Delete row change patt. length)",
   "SHIFT+ESC Clear/optimize all musicdata",
   "ESC Exit program",
+  "CTRL+Z Undo",
+  "CTRL+SHIFT+Z, CTRL+Y Redo",
   NULL
 };
 
@@ -58,7 +60,7 @@ static char *patternkeys[] = {
   "SHIFT+M,N Choose highlighting step",
   "SHIFT+O,P Shrink/expand pattern",
   "SHIFT+X,C,V Cut,copy,paste pattern",
-  "SHIFT+Z Cycle autoadvance-mode",
+  "SHIFT+Z Cycle autoadvance-mode (CTRL+Z is undo)",
   "SHIFT+1,2,3 Mute channel",
   NULL
 };

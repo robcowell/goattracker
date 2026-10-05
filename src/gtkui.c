@@ -205,8 +205,10 @@ static void runkey(unsigned raw, unsigned ascii, int shift, int allowhex)
   converthex();
   if (!allowhex) hexnybble = -1;
 
+  undo_markcursor();
   if ((editmode != EDIT_ORDERLIST) || (!orderlistcursor()))
     docommand();
+  undo_checkpoint(0);
 
   if (editmode != oldmode) ui_focuseditmode();
   ui_refresh();
@@ -242,6 +244,15 @@ static gboolean onkeypressed(GtkEventControllerKey *controller, guint keyval, gu
   raw = rawkeyof(controller, keyval, keycode);
   ascii = keyascii(keyval, state);
   if ((!raw) && (!ascii)) return FALSE;
+
+  // Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y undo and redo everywhere, text fields
+  // included (their own undo is off). Shift+Z still cycles auto-advance.
+  if ((state & GDK_CONTROL_MASK) && ((raw == KEY_Z) || (raw == KEY_Y)))
+  {
+    if ((raw == KEY_Y) || (state & GDK_SHIFT_MASK)) ui_redo();
+    else ui_undo();
+    return TRUE;
+  }
 
   // Tab cycles between the editors, as in the classic version
   if (raw == KEY_TAB)
@@ -353,8 +364,44 @@ static void synctoolbar(void)
 
 void ui_settitle(void)
 {
-  adw_window_title_set_subtitle(ADW_WINDOW_TITLE(windowtitle),
+  char buf[MAX_PATHNAME + 16];
+
+  // GNOME style: a bullet marks unsaved changes
+  snprintf(buf, sizeof buf, "%s%s", undo_isdirty() ? "• " : "",
     strlen(loadedsongfilename) ? ui_toutf8(loadedsongfilename) : "Untitled");
+  adw_window_title_set_subtitle(ADW_WINDOW_TITLE(windowtitle), buf);
+}
+
+static void syncundoactions(void)
+{
+  g_simple_action_set_enabled(G_SIMPLE_ACTION(g_action_map_lookup_action(G_ACTION_MAP(app), "undo")), undo_canundo());
+  g_simple_action_set_enabled(G_SIMPLE_ACTION(g_action_map_lookup_action(G_ACTION_MAP(app), "redo")), undo_canredo());
+}
+
+// Called after a native widget changed the song: record it and show it
+void ui_edited(void)
+{
+  ui_settitle();
+  syncundoactions();
+}
+
+static void afterundo(void)
+{
+  panels_syncall();
+  ui_focuseditmode();
+  ui_refresh();
+}
+
+void ui_undo(void)
+{
+  if (undo_undo()) afterundo();
+  else ui_toast("Nothing to undo");
+}
+
+void ui_redo(void)
+{
+  if (undo_redo()) afterundo();
+  else ui_toast("Nothing to redo");
 }
 
 void ui_refresh(void)
@@ -365,6 +412,7 @@ void ui_refresh(void)
   synctoolbar();
   updatestatus();
   ui_settitle();
+  syncundoactions();
 }
 
 void ui_toast(const char *message)
@@ -429,6 +477,7 @@ static void onsubtunechanged(GtkSpinButton *spin, gpointer data)
   if (syncing) return;
   while (esnum < target) nextsong();
   while (esnum > target) prevsong();
+  undo_checkpoint(0);
   ui_refresh();
 }
 
@@ -477,7 +526,9 @@ static void onsimpleaction(GSimpleAction *action, GVariant *parameter, gpointer 
 {
   const char *name = g_action_get_name(G_ACTION(action));
 
-  if (!strcmp(name, "new")) ui_clear();
+  if (!strcmp(name, "undo")) ui_undo();
+  else if (!strcmp(name, "redo")) ui_redo();
+  else if (!strcmp(name, "new")) ui_clear();
   else if (!strcmp(name, "open")) ui_loadsong(0);
   else if (!strcmp(name, "merge")) ui_loadsong(1);
   else if (!strcmp(name, "save")) ui_savesong();
@@ -582,6 +633,11 @@ static void appendsection(GMenu *menu, const char *submenu, const MENUITEM *item
 
 static GMenuModel *buildmenu(void)
 {
+  static const MENUITEM edit[] = {
+    {"Undo", "app.undo", "<Control>z"},
+    {"Redo", "app.redo", "<Control><Shift>z"},
+    {NULL}
+  };
   static const MENUITEM file[] = {
     {"New Song…", "app.new", "<Shift>Escape"},
     {"Open Song…", "app.open", "F10"},
@@ -620,6 +676,7 @@ static GMenuModel *buildmenu(void)
   GMenu *menu = g_menu_new();
 
   appendsection(menu, NULL, file);
+  appendsection(menu, NULL, edit);
   appendsection(menu, NULL, instrument);
   appendsection(menu, "Playback", playback);
   appendsection(menu, "View", view);
@@ -629,7 +686,7 @@ static GMenuModel *buildmenu(void)
 
 static void addactions(void)
 {
-  static const char *simple[] = {"new", "open", "merge", "save", "loadinstr", "saveinstr", "export",
+  static const char *simple[] = {"undo", "redo", "new", "open", "merge", "save", "loadinstr", "saveinstr", "export",
     "help", "quit", "mute", "fullscreen", "zoomin", "zoomout", NULL};
   static const struct { const char *name; int mode; } plays[] = {
     {"play", PLAY_BEGINNING}, {"playpos", PLAY_POS}, {"playpattern", PLAY_PATTERN}};
@@ -734,6 +791,14 @@ static GtkWidget *buildheaderbar(void)
   gtk_widget_set_focusable(followbutton, FALSE);
   g_signal_connect(followbutton, "toggled", G_CALLBACK(onfollowtoggled), NULL);
   adw_header_bar_pack_start(ADW_HEADER_BAR(header), followbutton);
+
+  {
+    GtkWidget *undobox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+    gtk_widget_add_css_class(undobox, "linked");
+    gtk_box_append(GTK_BOX(undobox), actionbutton("edit-undo-symbolic", "app.undo", "Undo (Ctrl+Z)"));
+    gtk_box_append(GTK_BOX(undobox), actionbutton("edit-redo-symbolic", "app.redo", "Redo (Ctrl+Shift+Z)"));
+    adw_header_bar_pack_start(ADW_HEADER_BAR(header), undobox);
+  }
 
   windowtitle = adw_window_title_new("GoatTracker", "Untitled");
   adw_header_bar_set_title_widget(ADW_HEADER_BAR(header), windowtitle);
@@ -840,7 +905,9 @@ static GtkWidget *buildorderpanel(void)
 
 static gboolean oncloserequest(GtkWindow *window, gpointer data)
 {
-  ui_quitnow();
+  undo_checkpoint(0);
+  if (undo_isdirty()) ui_confirmdiscard(ui_quitnow);
+  else ui_quitnow();
   return TRUE;
 }
 
@@ -930,6 +997,7 @@ static void onactivate(GtkApplication *application, gpointer data)
   g_signal_connect(window, "notify::fullscreened", G_CALLBACK(onfullscreenchanged), NULL);
 
   if (win_fullscreen) gtk_window_fullscreen(mainwindow);
+  undo_reset();
   gtk_window_present(mainwindow);
   ui_refresh();
   ui_focuseditmode();
