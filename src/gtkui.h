@@ -36,6 +36,7 @@ GtkWidget *grid_orderlist_new(void);
 GtkWidget *grid_tables_new(void);
 void grid_setfontscale(int scale);
 void grid_redraw(void);
+void grid_followcursor(void);
 
 // gtkpanels.c: instrument list/editor and song information
 extern GtkWidget *instrlist;
