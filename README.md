@@ -12,7 +12,7 @@ This is an unofficial port of GoatTracker v2.77. The engine and song data are un
 | --- | --- |
 | ![The original 100×37 text screen](docs/screenshots/classic.png) | ![The docked GTK window](docs/screenshots/hero.png) |
 | One fixed 100×37 character screen drawn with an 8×16 bitmap font, scaled only in whole steps | A resizable window with movable dividers between panels and a scalable monospace font |
-| Everything driven by the keyboard, with a few mouse hot spots | Every key command still works, plus native buttons, menus, sliders and fields, and clicking anywhere in the grids |
+| Everything driven by the keyboard, with a few mouse hot spots | Every key command still works, plus native buttons, menus, sliders and fields; click, drag to select and right-click in the grids |
 | No undo | Undo and redo for every edit |
 | No record of unsaved changes: loading a song replaces your work without a warning | Unsaved changes are tracked, and you are asked before anything is lost |
 | A home-made text-mode file selector | The desktop's file chooser |
@@ -25,6 +25,13 @@ This is an unofficial port of GoatTracker v2.77. The engine and song data are un
 ### A tracker layout you can see all at once
 
 Orderlists on the left, patterns in the middle, instruments down the right, and the wave, pulse, filter and speed tables along the bottom, all visible together and all live while the song plays. Panels are separated by draggable dividers.
+
+All three grid editors work with the mouse:
+
+- Click to place the cursor, drag to select rows, and Shift+click to extend the selection.
+- Right-click for the editor's commands: cut, copy and paste, transpose, insert and delete rows, split and join patterns, set the play start and end positions, and more. These are the classic Shift+key commands, so they act on the selection when there is one.
+- Double-click an orderlist entry to open that pattern.
+- The scroll wheel moves the view without moving the cursor; any key brings the view back to the cursor.
 
 #### Pattern editor
 

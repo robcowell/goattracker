@@ -245,6 +245,9 @@ static gboolean onkeypressed(GtkEventControllerKey *controller, guint keyval, gu
   ascii = keyascii(keyval, state);
   if ((!raw) && (!ascii)) return FALSE;
 
+  // Keyboard movement brings the views back to the cursor
+  grid_followcursor();
+
   // Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y undo and redo everywhere, text fields
   // included (their own undo is off). Shift+Z still cycles auto-advance.
   if ((state & GDK_CONTROL_MASK) && ((raw == KEY_Z) || (raw == KEY_Y)))
@@ -387,6 +390,7 @@ void ui_edited(void)
 
 static void afterundo(void)
 {
+  grid_followcursor();
   panels_syncall();
   ui_focuseditmode();
   ui_refresh();
@@ -426,6 +430,7 @@ static gboolean tick(gpointer data)
 
   if ((playing) || (wasplaying))
   {
+    if ((playing) && (followplay)) grid_followcursor();
     followplayupdate();
     grid_redraw();
     updatestatus();
