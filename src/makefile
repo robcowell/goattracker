@@ -2,10 +2,12 @@
 # Linux makefile
 #
 
-CFLAGS+=`sdl-config --cflags`
+CFLAGS+=`sdl2-config --cflags`
+GTK_CFLAGS=`pkg-config --cflags gtk4 libadwaita-1`
+GTK_LIBS=`pkg-config --libs gtk4 libadwaita-1`
 PREFIX=../linux/
 SUFFIX=
-LIBS+=`sdl-config --libs`
+LIBS+=`sdl2-config --libs`
 
 include makefile.common
 

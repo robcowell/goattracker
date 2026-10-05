@@ -12,7 +12,6 @@
 #include "bme.h"
 
 #include "gcommon.h"
-#include "gconsole.h"
 #include "gsound.h"
 #include "gsid.h"
 #include "gsong.h"
@@ -24,6 +23,7 @@
 #include "gorder.h"
 #include "ginstr.h"
 #include "gtable.h"
+#include "ghelp.h"
 
 #define EDIT_PATTERN 0
 #define EDIT_ORDERLIST 1
@@ -38,12 +38,16 @@
 #define VISIBLEPATTROWS 31
 #define VISIBLEORDERLIST 15
 #define VISIBLETABLEROWS 15
-#define VISIBLEFILES 24
 
 #define PGUPDNREPEAT 8
 
 #ifndef GOATTRK2_C
-extern int menu;
+extern int key, rawkey, shiftpressed;
+extern int soundinitfailed;
+extern int starthelp;
+extern unsigned bigwindow;
+extern int win_fullscreen;
+extern unsigned customclockrate;
 extern int editmode;
 extern int recordmode;
 extern int followplay;
@@ -51,11 +55,6 @@ extern int hexnybble;
 extern int stepsize;
 extern int autoadvance;
 extern int defaultpatternlength;
-extern int cursorflash;
-extern int cursorcolortable[];
-extern int exitprogram;
-extern int eacolumn;
-extern int eamode;
 extern unsigned keypreset;
 extern unsigned playerversion;
 extern int fileformat;
@@ -96,25 +95,17 @@ extern unsigned char hexkeytbl[16];
 extern unsigned char datafile[];
 #endif
 
+int goattrk2_init(int argc, char **argv);
+void goattrk2_shutdown(void);
+void doclear(int cs, int cp, int ci, int ct, int cn, int newpatternlength);
 void getparam(FILE *handle, unsigned *value);
 void getfloatparam(FILE *handle, float *value);
 void getstringparam(FILE *handle, char *value);
-void waitkey(void);
-void waitkeymouse(void);
-void waitkeynoupdate(void);
-void waitkeymousenoupdate(void);
 void converthex(void);
 void docommand(void);
-void onlinehelp(int standalone, int context);
-void mousecommands(void);
 void generalcommands(void);
-void load(void);
-void save(void);
-void quit(void);
-void clear(void);
 void prevmultiplier(void);
 void nextmultiplier(void);
-void editadsr(void);
 void calculatefreqtable(void);
 void setspecialnotenames(void);
 void readscalatuningfile(void);

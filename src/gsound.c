@@ -22,7 +22,10 @@ FILE *writehandle = NULL;
 
 void sound_playrout(void);
 void sound_mixer(Sint32 *dest, unsigned samples);
-Uint32 sound_timer(Uint32 interval);
+Uint32 sound_timer(Uint32 interval, void *param);
+void sound_starttimer(void);
+void sound_stoptimer(void);
+SDL_TimerID soundtimer = 0;
 
 #ifdef __WIN32__
 
@@ -141,12 +144,12 @@ int sound_init(unsigned b, unsigned mr, unsigned writer, unsigned hardsid, unsig
     else return 0;
     if (!cycleexacthardsid)
     {
-      SDL_SetTimer(1000 / framerate, sound_timer);
+      sound_starttimer();
     }
     else
     {
       runplayerthread = TRUE;
-      playerthread = SDL_CreateThread(sound_thread, NULL);
+      playerthread = SDL_CreateThread(sound_thread, "hardsid", NULL);
       if (!playerthread) return 0;
     }
     #else
@@ -163,7 +166,7 @@ int sound_init(unsigned b, unsigned mr, unsigned writer, unsigned hardsid, unsig
       }
     }
     else return 0;
-    SDL_SetTimer(1000 / framerate, sound_timer);
+    sound_starttimer();
     #endif
 
     goto SOUNDOK;
@@ -191,7 +194,7 @@ int sound_init(unsigned b, unsigned mr, unsigned writer, unsigned hardsid, unsig
     #endif
 
     usecatweasel = 1;
-    SDL_SetTimer(1000 / framerate, sound_timer);
+    sound_starttimer();
     goto SOUNDOK;
   }
 
@@ -239,7 +242,7 @@ void sound_uninit(void)
     #ifdef __WIN32__
     if (!playerthread)
     {
-      SDL_SetTimer(0, NULL);
+      sound_stoptimer();
     }
     else
     {
@@ -248,7 +251,7 @@ void sound_uninit(void)
       playerthread = NULL;
     }
     #else
-    SDL_SetTimer(0, NULL);
+    sound_stoptimer();
     #endif
   }
   else
@@ -341,7 +344,22 @@ void sound_flush(void)
   #endif
 }
 
-Uint32 sound_timer(Uint32 interval)
+// Drives the playroutine for hardware SID output, which has no audio callback
+void sound_starttimer(void)
+{
+  soundtimer = SDL_AddTimer(1000 / framerate, sound_timer, NULL);
+}
+
+void sound_stoptimer(void)
+{
+  if (soundtimer)
+  {
+    SDL_RemoveTimer(soundtimer);
+    soundtimer = 0;
+  }
+}
+
+Uint32 sound_timer(Uint32 interval, void *param)
 {
   if (!initted) return interval;
   sound_playrout();
