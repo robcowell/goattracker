@@ -27,10 +27,15 @@ static GtkWidget *instrpanel;
 static GtkWidget *songpanel;
 static GtkWidget *recordbutton, *followbutton, *octavespin, *stepspin;
 static GtkWidget *keymodedrop, *siddrop, *speeddrop, *hrbutton, *subtunespin;
-static GtkWidget *statusplay, *statuspos, *statusmode;
+static GtkWidget *statusplay, *statuspos, *statusinfo, *statusmode;
 static int syncing = 0;
 static int wasplaying = 0;
 static int quitting = 0;
+
+// Settings of this editor, kept apart from goattrk2.cfg so that file stays
+// in the stock format
+int settings_backupinterval = 30;
+static guint backuptimer = 0;
 
 //
 // Latin-1 conversion (song and instrument names are stored as Latin-1)
@@ -257,6 +262,15 @@ static gboolean onkeypressed(GtkEventControllerKey *controller, guint keyval, gu
     return TRUE;
   }
 
+  // Ctrl+S saves and Ctrl+, opens Preferences from anywhere; Shift+S and
+  // Shift+, keep their classic meanings
+  if ((state & GDK_CONTROL_MASK) && (!(state & GDK_SHIFT_MASK)) && ((raw == KEY_S) || (raw == KEY_COMMA)))
+  {
+    if (raw == KEY_S) ui_quicksave();
+    else ui_preferences();
+    return TRUE;
+  }
+
   // Tab cycles between the editors, as in the classic version
   if (raw == KEY_TAB)
   {
@@ -339,6 +353,12 @@ static void updatestatus(void)
     len += sprintf(buf + len, "%sCh%d %02X/%02d", c ? "   " : "", c + 1, chnpos, chnrow);
   }
   gtk_label_set_text(GTK_LABEL(statuspos), buf);
+
+  {
+    char info[256];
+    info_describe(info, sizeof info);
+    gtk_label_set_text(GTK_LABEL(statusinfo), info);
+  }
 
   {
     static const char *advance[] = {"", "  ·  Auto-advance", "  ·  Auto-advance (all)"};
@@ -443,7 +463,7 @@ static gboolean tick(gpointer data)
 // Toolbar handlers
 //
 
-static void restartsound(void)
+void ui_restartsound(void)
 {
   if (!sound_init(b, mr, writer, hardsid, sidmodel, ntsc, multiplier, catweasel, interpolate, customclockrate))
     ui_toast("Sound output could not be restarted");
@@ -496,14 +516,14 @@ static void onsidchanged(GObject *drop, GParamSpec *pspec, gpointer data)
 {
   if (syncing) return;
   sidmodel = gtk_drop_down_get_selected(GTK_DROP_DOWN(drop));
-  restartsound();
+  ui_restartsound();
 }
 
 static void onspeedchanged(GObject *drop, GParamSpec *pspec, gpointer data)
 {
   if (syncing) return;
   multiplier = gtk_drop_down_get_selected(GTK_DROP_DOWN(drop));
-  restartsound();
+  ui_restartsound();
 }
 
 static void onhrclicked(GtkButton *button, gpointer data)
@@ -536,7 +556,9 @@ static void onsimpleaction(GSimpleAction *action, GVariant *parameter, gpointer 
   else if (!strcmp(name, "new")) ui_clear();
   else if (!strcmp(name, "open")) ui_loadsong(0);
   else if (!strcmp(name, "merge")) ui_loadsong(1);
-  else if (!strcmp(name, "save")) ui_savesong();
+  else if (!strcmp(name, "save")) ui_quicksave();
+  else if (!strcmp(name, "saveas")) ui_savesong();
+  else if (!strcmp(name, "prefs")) ui_preferences();
   else if (!strcmp(name, "loadinstr")) ui_loadinstrument();
   else if (!strcmp(name, "saveinstr")) ui_saveinstrument();
   else if (!strcmp(name, "export")) ui_relocator();
@@ -647,7 +669,8 @@ static GMenuModel *buildmenu(void)
     {"New Song…", "app.new", "<Shift>Escape"},
     {"Open Song…", "app.open", "F10"},
     {"Merge Song…", "app.merge", "<Shift>F10"},
-    {"Save Song…", "app.save", "F11"},
+    {"Save Song", "app.save", "<Control>s"},
+    {"Save Song As…", "app.saveas", "F11"},
     {NULL}
   };
   static const MENUITEM instrument[] = {
@@ -673,6 +696,7 @@ static GMenuModel *buildmenu(void)
     {NULL}
   };
   static const MENUITEM help[] = {
+    {"Preferences", "app.prefs", "<Control>comma"},
     {"Keyboard Help", "app.help", "F12"},
     {"About GoatTracker", "app.about", NULL},
     {"Quit", "app.quit", "Escape"},
@@ -691,7 +715,7 @@ static GMenuModel *buildmenu(void)
 
 static void addactions(void)
 {
-  static const char *simple[] = {"undo", "redo", "new", "open", "merge", "save", "loadinstr", "saveinstr", "export",
+  static const char *simple[] = {"undo", "redo", "new", "open", "merge", "save", "saveas", "prefs", "loadinstr", "saveinstr", "export",
     "help", "quit", "mute", "fullscreen", "zoomin", "zoomout", NULL};
   static const struct { const char *name; int mode; } plays[] = {
     {"play", PLAY_BEGINNING}, {"playpos", PLAY_POS}, {"playpattern", PLAY_PATTERN}};
@@ -869,13 +893,18 @@ static GtkWidget *buildstatusbar(void)
   gtk_widget_add_css_class(bar, "toolbar");
   statusplay = gtk_label_new("");
   statuspos = gtk_label_new("");
+  statusinfo = gtk_label_new("");
   statusmode = gtk_label_new("");
   gtk_widget_add_css_class(statuspos, "monospace");
   gtk_widget_add_css_class(statusplay, "monospace");
-  gtk_widget_set_hexpand(statuspos, TRUE);
-  gtk_label_set_xalign(GTK_LABEL(statuspos), 0);
+  // What the item under the cursor means
+  gtk_widget_set_hexpand(statusinfo, TRUE);
+  gtk_label_set_xalign(GTK_LABEL(statusinfo), 0);
+  gtk_label_set_ellipsize(GTK_LABEL(statusinfo), PANGO_ELLIPSIZE_END);
+  gtk_widget_add_css_class(statusinfo, "dim-label");
   gtk_box_append(GTK_BOX(bar), statusplay);
   gtk_box_append(GTK_BOX(bar), statuspos);
+  gtk_box_append(GTK_BOX(bar), statusinfo);
   gtk_box_append(GTK_BOX(bar), statusmode);
   return bar;
 }
@@ -927,10 +956,101 @@ static gboolean onsignal(gpointer data)
   return G_SOURCE_REMOVE;
 }
 
+//
+// Settings file
+//
+
+static char *settingspath(void)
+{
+  return g_build_filename(g_get_home_dir(), ".goattrk", "gtkedition.ini", NULL);
+}
+
+static void loadsettings(void)
+{
+  GKeyFile *keys = g_key_file_new();
+  char *path = settingspath();
+
+  if (g_key_file_load_from_file(keys, path, G_KEY_FILE_NONE, NULL))
+  {
+    GError *error = NULL;
+    int v = g_key_file_get_integer(keys, "editor", "backup-interval", &error);
+    if (!error) settings_backupinterval = CLAMP(v, 0, 3600);
+    g_clear_error(&error);
+  }
+  g_key_file_unref(keys);
+  g_free(path);
+}
+
+static void savesettings(void)
+{
+  GKeyFile *keys = g_key_file_new();
+  char *path = settingspath();
+  char *dir = g_path_get_dirname(path);
+
+  g_key_file_load_from_file(keys, path, G_KEY_FILE_KEEP_COMMENTS, NULL);
+  g_key_file_set_integer(keys, "editor", "backup-interval", settings_backupinterval);
+  g_mkdir_with_parents(dir, 0755);
+  g_key_file_save_to_file(keys, path, NULL);
+  g_key_file_unref(keys);
+  g_free(dir);
+  g_free(path);
+}
+
+static gboolean onbackuptimer(gpointer data)
+{
+  ui_backup();
+  return G_SOURCE_CONTINUE;
+}
+
+// (Re)start the backup timer after the interval changed
+void ui_backupschanged(void)
+{
+  if (backuptimer) g_source_remove(backuptimer);
+  backuptimer = 0;
+  if (settings_backupinterval > 0)
+    backuptimer = g_timeout_add_seconds(settings_backupinterval, onbackuptimer, NULL);
+}
+
+// Drag and drop: a song opens (or asks to save first), an instrument loads
+// into the current instrument
+static char *droppedpath = NULL;
+
+static void opendropped(void)
+{
+  if (droppedpath) ui_opensongpath(droppedpath, 0);
+}
+
+static gboolean ondrop(GtkDropTarget *target, const GValue *value, double x, double y, gpointer data)
+{
+  GSList *files = g_value_get_boxed(value);
+  char *path, *lower;
+  int isinstrument;
+
+  if ((!files) || (!files->data)) return FALSE;
+  path = g_file_get_path(files->data);
+  if (!path) return FALSE;
+
+  lower = g_ascii_strdown(path, -1);
+  isinstrument = g_str_has_suffix(lower, ".ins");
+  g_free(lower);
+  if (isinstrument) ui_loadinstrumentpath(path);
+  else
+  {
+    g_free(droppedpath);
+    droppedpath = g_strdup(path);
+    undo_checkpoint(0);
+    if (undo_isdirty()) ui_confirmdiscard(opendropped);
+    else opendropped();
+  }
+  g_free(path);
+  return TRUE;
+}
+
 void ui_quitnow(void)
 {
   if (quitting) return;
   quitting = 1;
+  savesettings();
   goattrk2_shutdown();
   g_application_quit(G_APPLICATION(app));
 }
@@ -948,6 +1068,7 @@ static void onactivate(GtkApplication *application, gpointer data)
   adw_style_manager_set_color_scheme(adw_style_manager_get_default(), ADW_COLOR_SCHEME_PREFER_DARK);
   gtk_window_set_title(mainwindow, "GoatTracker");
   gtk_window_set_default_size(mainwindow, 1280, 820);
+  loadsettings();
   addactions();
 
   // The grids must exist before the panels that refer to them
@@ -1001,14 +1122,22 @@ static void onactivate(GtkApplication *application, gpointer data)
   g_signal_connect(window, "close-request", G_CALLBACK(oncloserequest), NULL);
   g_signal_connect(window, "notify::fullscreened", G_CALLBACK(onfullscreenchanged), NULL);
 
+  {
+    GtkDropTarget *target = gtk_drop_target_new(GDK_TYPE_FILE_LIST, GDK_ACTION_COPY);
+    g_signal_connect(target, "drop", G_CALLBACK(ondrop), NULL);
+    gtk_widget_add_controller(window, GTK_EVENT_CONTROLLER(target));
+  }
+
   if (win_fullscreen) gtk_window_fullscreen(mainwindow);
   undo_reset();
   gtk_window_present(mainwindow);
   ui_refresh();
   ui_focuseditmode();
   g_timeout_add(20, tick, NULL);
+  ui_backupschanged();
 
   if (soundinitfailed) ui_showsoundfailure();
+  else ui_afterstartupload();
   if (starthelp) ui_help(0);
 }
 

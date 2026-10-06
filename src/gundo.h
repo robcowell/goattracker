@@ -30,4 +30,7 @@ int undo_canredo(void);
 int undo_isdirty(void);
 void undo_marksaved(void);
 
+// A number that changes whenever the song data changes
+unsigned undo_version(void);
+
 #endif

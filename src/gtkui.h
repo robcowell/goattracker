@@ -53,6 +53,21 @@ void ui_loadinstrument(void);
 void ui_saveinstrument(void);
 void ui_showsoundfailure(void);
 void ui_confirmdiscard(void (*proceed)(void));
+void ui_opensongpath(const char *path, int merge);
+void ui_afterstartupload(void);
+void ui_loadinstrumentpath(const char *path);
+void ui_quicksave(void);
+void ui_backup(void);
+void ui_preferences(void);
+
+// gtkui.c: settings of this editor (kept in ~/.goattrk/gtkedition.ini)
+extern int settings_backupinterval;
+void ui_backupschanged(void);
+void ui_restartsound(void);
+
+// gtkinfo.c: plain-language descriptions of song data
+void info_describe(char *buf, int size);
+void table_describe(int table, int pos, char *buf, int size, int brief);
 
 // Latin-1 (song data) <-> UTF-8 (GTK) conversion; returns a static buffer
 const char *ui_toutf8(const char *latin1);

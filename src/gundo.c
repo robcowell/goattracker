@@ -54,6 +54,7 @@ static int undocount = 0;
 static int redocount = 0;
 static int nextid = 1;
 static int savedid = 0;
+static unsigned version = 0;     // changes whenever the song data does
 static CURSOR pendingcursor;
 static int cursorpending = 0;
 
@@ -191,6 +192,7 @@ void undo_reset(void)
   snapshot();
   savedid = 0;
   cursorpending = 0;
+  version++;
 }
 
 void undo_markcursor(void)
@@ -241,6 +243,7 @@ int undo_checkpoint(int coalesce)
       }
       readregion(changed[c], shadowof(changed[c]));
     }
+    version++;
     return 1;
   }
 
@@ -270,6 +273,7 @@ int undo_checkpoint(int coalesce)
     undocount--;
   }
   undostack[undocount++] = e;
+  version++;
   return 1;
 }
 
@@ -293,6 +297,7 @@ static void swapentry(UNDOENTRY *e)
   }
   countpatternlengths();
   setcursor(&e->cursor);
+  version++;
 }
 
 int undo_undo(void)
@@ -337,6 +342,11 @@ static int currentid(void)
 int undo_isdirty(void)
 {
   return currentid() != savedid;
+}
+
+unsigned undo_version(void)
+{
+  return version;
 }
 
 void undo_marksaved(void)
