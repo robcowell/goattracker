@@ -14,7 +14,8 @@
 
 #define MAX_CLIPS (MAX_SONGLEN * 16)
 
-#define CLIP_LOOPSTART 1   // the voice restarts here after its last clip
+#define CLIP_LOOPSTART 1   // the voice restarts here after its last clip (with
+                           // none, the voice and the song stop at its end)
 #define CLIP_TRANSBYTE 2   // read with a transpose byte before it
 
 typedef struct
@@ -25,6 +26,8 @@ typedef struct
   int orderpos;          // orderlist index of the pattern number when read,
                          // -1 for a new clip
   int rep;               // pass of a repeated pattern (0 = first)
+  int loopofs;           // loop start: how far into the entry (its transpose
+                         // and repeat bytes) the restart position points
 } CLIP;
 
 #define MINTRANS -16
@@ -50,5 +53,8 @@ int arr_copypattern(int src);
 
 // Make a free pattern empty, rows long; returns its number or -1
 int arr_newpattern(int rows);
+
+// Empty a pattern again (a copy that couldn't be placed), so that it is free
+void arr_discardpattern(int patt);
 
 #endif

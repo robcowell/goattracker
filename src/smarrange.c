@@ -560,6 +560,8 @@ static void insertpatternclip(int patt, int trans)
   memcpy(work, clips[selchn], nclips[selchn] * sizeof(CLIP));
   n = insertclip(work, nclips[selchn], selclip + 1, clip);
   if (commit(selchn, work, n)) edited(selchn, selclip + 1);
+  // A new pattern nothing plays would never be free again
+  else arr_discardpattern(patt);
 }
 
 static void duplicatenew(void)
@@ -605,6 +607,7 @@ static void makeunique(void)
   work[selclip].orderpos = -1;
   work[selclip].rep = 0;
   if (commit(selchn, work, nclips[selchn])) edited(selchn, selclip);
+  else arr_discardpattern(p);
 }
 
 static void transpose(int semitones)
