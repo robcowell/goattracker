@@ -65,7 +65,7 @@ static int decoded(int table)
 // Width of a table's description column; the filter table's lists voices
 static int decodew(int table)
 {
-  return (table == FTBL) ? 21 : 15;
+  return (table == FTBL) ? 25 : 15;
 }
 
 static int tblwidth(int table)

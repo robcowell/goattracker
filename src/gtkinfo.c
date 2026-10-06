@@ -22,7 +22,8 @@ static void waveformname(unsigned char w, char *buf, int size)
     if (w & (1 << c)) len += snprintf(buf + len, size - len, ", %s", bits[c]);
 }
 
-// Voices in a filter bitmask: "channels 1+2", or "1+2" when brief
+// Voices in a filter bitmask, bit 3 being the SID's external audio input:
+// "channels 1+2 and external input", or "1+2+EXT" when brief
 static void channelmask(unsigned char mask, char *buf, int size, int brief)
 {
   int c, len = 0;
@@ -30,6 +31,11 @@ static void channelmask(unsigned char mask, char *buf, int size, int brief)
   buf[0] = 0;
   for (c = 0; c < MAX_CHN; c++)
     if (mask & (1 << c)) len += snprintf(buf + len, size - len, "%s%d", len ? "+" : (brief ? "" : "channels "), c + 1);
+  if (mask & 8)
+  {
+    if (brief) len += snprintf(buf + len, size - len, "%sEXT", len ? "+" : "");
+    else len += snprintf(buf + len, size - len, "%sexternal input", len ? " and " : "");
+  }
   if (!len) snprintf(buf, size, brief ? "-" : "no channels");
 }
 
@@ -112,7 +118,7 @@ void table_describe(int table, int pos, char *buf, int size, int brief)
     case FTBL:
     if (l & 0x80)
     {
-      char chns[32];
+      char chns[48];
       channelmask(r & 0x0f, chns, sizeof chns, brief);
       if (brief) snprintf(buf, size, "%s RES %X CH %s", passband(l, 1), r >> 4, chns);
       else snprintf(buf, size, "Filter %s, resonance %X, %s", passband(l, 0), r >> 4, chns);
