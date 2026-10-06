@@ -638,6 +638,31 @@ static void resizefortext(int oldscale, int newscale)
   gtk_window_set_default_size(mainwindow, width, height);
 }
 
+// Scale the dividers with the text. The side of each divider that keeps
+// its size when the window grows (the instrument column, the tables, the
+// orderlist) is scaled; the other side takes up the rest, whatever size the
+// window ends up.
+static void scalepanes(double ratio)
+{
+  int c;
+
+  for (c = 0; c < NUM_PANES; c++)
+  {
+    GtkPaned *paned = GTK_PANED(panes[c]);
+    int pos, size;
+
+    if (!panes[c]) continue;
+    pos = gtk_paned_get_position(paned);
+    size = (gtk_orientable_get_orientation(GTK_ORIENTABLE(paned)) == GTK_ORIENTATION_HORIZONTAL) ?
+      gtk_widget_get_width(panes[c]) : gtk_widget_get_height(panes[c]);
+    if ((!gtk_paned_get_resize_end_child(paned)) && (gtk_paned_get_resize_start_child(paned)))
+      pos = (int)(size - (size - pos) * ratio + 0.5);
+    else
+      pos = (int)(pos * ratio + 0.5);
+    gtk_paned_set_position(paned, MAX(pos, 0));
+  }
+}
+
 void ui_settextscale(int scale)
 {
   static GtkCssProvider *provider = NULL;
@@ -648,7 +673,10 @@ void ui_settextscale(int scale)
   if (!mainwindow) return;
   // Changed from the View menu while the window is open
   if ((textscale != oldscale) && (gtk_widget_get_realized(GTK_WIDGET(mainwindow))))
+  {
+    scalepanes(textfactor(textscale) / textfactor(oldscale));
     resizefortext(oldscale, textscale);
+  }
   if (!provider)
   {
     // libadwaita gives some styles fixed sizes, so restate them relative to

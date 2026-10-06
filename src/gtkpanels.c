@@ -524,6 +524,8 @@ GtkWidget *panel_instruments_new(void)
   gtk_box_append(GTK_BOX(box), scroll);
   gtk_paned_set_start_child(GTK_PANED(paned), box);
   gtk_paned_set_shrink_start_child(GTK_PANED(paned), FALSE);
+  // A taller window gives the editor the extra room; the list keeps its size
+  gtk_paned_set_resize_start_child(GTK_PANED(paned), FALSE);
 
   // Parameters of the selected instrument
   instreditor = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
