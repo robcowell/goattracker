@@ -17,6 +17,7 @@ enum
 };
 
 static GtkWidget *instrlabels[MAX_INSTR];
+static GtkWidget *instrcounts[MAX_INSTR];
 static GtkWidget *fieldspins[NUMFIELDS];
 static GtkWidget *adsrscales[4];
 static GtkWidget *instrnameentry;
@@ -317,10 +318,19 @@ GtkWidget *panel_instruments_new(void)
   gtk_widget_add_css_class(instrlist, "navigation-sidebar");
   for (c = 0; c < MAX_INSTR; c++)
   {
+    GtkWidget *rowbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
+
     instrlabels[c] = gtk_label_new("");
     gtk_label_set_xalign(GTK_LABEL(instrlabels[c]), 0);
+    gtk_widget_set_hexpand(instrlabels[c], TRUE);
     gtk_widget_add_css_class(instrlabels[c], "monospace");
-    gtk_list_box_append(GTK_LIST_BOX(instrlist), instrlabels[c]);
+    // How many patterns use the instrument
+    instrcounts[c] = gtk_label_new("");
+    gtk_widget_add_css_class(instrcounts[c], "dim-label");
+    gtk_widget_add_css_class(instrcounts[c], "caption");
+    gtk_box_append(GTK_BOX(rowbox), instrlabels[c]);
+    gtk_box_append(GTK_BOX(rowbox), instrcounts[c]);
+    gtk_list_box_append(GTK_LIST_BOX(instrlist), rowbox);
   }
   g_signal_connect(instrlist, "row-selected", G_CALLBACK(oninstrselected), NULL);
   gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scroll), instrlist);
@@ -453,6 +463,30 @@ static void settext(GtkWidget *editable, const char *text)
     gtk_editable_set_text(GTK_EDITABLE(editable), text);
 }
 
+// Number of patterns that use each instrument, recounted when the song changes
+static int instrusecount[MAX_INSTR];
+
+static void countinstruments(void)
+{
+  static unsigned countedversion = (unsigned)-1;
+  unsigned char used[MAX_INSTR];
+  int p, r;
+
+  if (undo_version() == countedversion) return;
+  countedversion = undo_version();
+  memset(instrusecount, 0, sizeof instrusecount);
+  for (p = 0; p < MAX_PATT; p++)
+  {
+    memset(used, 0, sizeof used);
+    for (r = 0; r < pattlen[p]; r++)
+    {
+      unsigned char i = pattern[p][r * 4 + 1];
+      if ((i) && (i < MAX_INSTR)) used[i] = 1;
+    }
+    for (r = 1; r < MAX_INSTR; r++) instrusecount[r] += used[r];
+  }
+}
+
 void panels_sync(void)
 {
   static char *fields[] = {songname, authorname, copyrightname};
@@ -463,12 +497,24 @@ void panels_sync(void)
   if (!instrlist) return;
   syncing = 1;
 
+  countinstruments();
   for (c = 0; c < MAX_INSTR; c++)
   {
     if (c) snprintf(buf, sizeof buf, "%02X  %s", c, ui_toutf8(instr[c].name));
     else strcpy(buf, "00  (no instrument)");
     if (strcmp(gtk_label_get_text(GTK_LABEL(instrlabels[c])), buf))
       gtk_label_set_text(GTK_LABEL(instrlabels[c]), buf);
+
+    if ((c) && (instrusecount[c])) snprintf(buf, sizeof buf, "%d", instrusecount[c]);
+    else buf[0] = 0;
+    if (strcmp(gtk_label_get_text(GTK_LABEL(instrcounts[c])), buf))
+    {
+      gtk_label_set_text(GTK_LABEL(instrcounts[c]), buf);
+      gtk_widget_set_tooltip_text(instrcounts[c], buf[0] ? "Patterns that use this instrument" : NULL);
+    }
+    // Unused instruments are dimmed
+    if ((c) && (!instrusecount[c])) gtk_widget_add_css_class(instrlabels[c], "dim-label");
+    else gtk_widget_remove_css_class(instrlabels[c], "dim-label");
   }
   row = gtk_list_box_get_row_at_index(GTK_LIST_BOX(instrlist), einum);
   if (gtk_list_box_get_selected_row(GTK_LIST_BOX(instrlist)) != row)

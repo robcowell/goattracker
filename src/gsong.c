@@ -19,7 +19,33 @@ int songlen[MAX_SONGS][MAX_CHN];
 int highestusedpattern;
 int highestusedinstr;
 
+// Trailing chunks from GoatTracker Ultra songs. Instrument pans and the
+// SIDTracker64 flag are not used here but are kept so that saving a GTUltra
+// song does not lose them.
+#define CHUNK_EDITORINFO 0x1f
+#define CHUNK_INSTRPAN 0x9a
+#define CHUNK_SIDTRACKER64 0x9b
+unsigned char instrpan[MAX_INSTR];
+int instrpanloaded = 0;
+int songsidtracker64 = 0;
+int songsidchannels = MAX_CHN;
+int songsettingsloaded = 0;
+int mergeresult = MERGE_OK;
+int loadresult = LOAD_OK;
+
+static void writesongchunks(FILE *handle);
+static void readsongchunks(FILE *handle, int instrcount);
+
 int savesong(void)
+{
+  if (!savesongfile(songfilename)) return 0;
+  strcpy(loadedsongfilename, songfilename);
+  return 1;
+}
+
+// Save the song to any path without changing the current song's file name
+// (used for backups as well)
+int savesongfile(const char *path)
 {
   int c;
   char ident[] = {'G', 'T', 'S', '5'};
@@ -34,7 +60,7 @@ int savesong(void)
     }
     if (!extfound) strcat(songfilename, ".sng");
   }
-  handle = fopen(songfilename, "wb");
+  handle = fopen(path, "wb");
   if (handle)
   {
     int d;
@@ -117,8 +143,8 @@ int savesong(void)
       fwrite8(handle, length);
       fwrite(pattern[c], length * 4, 1, handle);
     }
+    writesongchunks(handle);
     fclose(handle);
-    strcpy(loadedsongfilename, songfilename);
     return 1;
   }
   return 0;
@@ -174,13 +200,150 @@ int saveinstrument(void)
   return 0;
 }
 
+// Write the editor settings chunk GoatTracker Ultra uses, so that its
+// settings travel with the song. Stock GoatTracker ignores trailing data.
+static void writesongchunks(FILE *handle)
+{
+  int c;
+
+  fwrite8(handle, CHUNK_EDITORINFO);
+  fwrite8(handle, usefinevib);
+  fwrite8(handle, optimizepulse);
+  fwrite8(handle, optimizerealtime);
+  fwrite8(handle, ntsc);
+  fwrite8(handle, sidmodel);
+  fwritele32(handle, adparam);
+  fwritele32(handle, multiplier);
+  fwritele32(handle, MAX_CHN);
+  fwrite8(handle, 0);                 // stereo mode: mono
+  if (instrpanloaded)
+  {
+    fwrite8(handle, CHUNK_INSTRPAN);
+    for (c = 1; c <= highestusedinstr; c++) fwrite8(handle, instrpan[c]);
+  }
+  fwrite8(handle, CHUNK_SIDTRACKER64);
+  fwrite8(handle, songsidtracker64);
+}
+
+// Read GoatTracker Ultra's trailing chunks until an unknown or missing one
+static void readsongchunks(FILE *handle, int instrcount)
+{
+  int c, id;
+
+  instrpanloaded = 0;
+  songsidtracker64 = 0;
+  songsidchannels = MAX_CHN;
+  songsettingsloaded = 0;
+
+  for (;;)
+  {
+    id = fgetc(handle);
+    if (id == CHUNK_EDITORINFO)
+    {
+      usefinevib = fread8(handle) ? 1 : 0;
+      optimizepulse = fread8(handle) ? 1 : 0;
+      optimizerealtime = fread8(handle) ? 1 : 0;
+      ntsc = fread8(handle) & 1;
+      sidmodel = fread8(handle) & 1;
+      adparam = freadle32(handle) & 0xffff;
+      multiplier = freadle32(handle);
+      if (multiplier > 16) multiplier = 16;
+      songsidchannels = freadle32(handle);
+      fread8(handle);                 // stereo mode
+      if (feof(handle)) break;
+      songsettingsloaded = 1;
+    }
+    else if (id == CHUNK_INSTRPAN)
+    {
+      for (c = 1; (c <= instrcount) && (c < MAX_INSTR); c++) instrpan[c] = fread8(handle);
+      instrpanloaded = 1;
+    }
+    else if (id == CHUNK_SIDTRACKER64)
+      songsidtracker64 = fread8(handle) ? 1 : 0;
+    else
+      break;
+  }
+}
+
+// Check that a GTS3-GTS5 song file (positioned after its ident) fits the
+// editor's limits when read with the given number of orderlists per
+// subtune, without changing any song data. Stock GoatTracker trusts these
+// counts, so a damaged file or a 6-channel GoatTracker Stereo song would
+// overwrite memory.
+static int validatesongfile(FILE *handle, int channels)
+{
+  long start = ftell(handle);
+  long size, end;
+  int c, d, amount, length, next, ok = 0;
+
+  fseek(handle, 0, SEEK_END);
+  size = ftell(handle);
+  fseek(handle, start, SEEK_SET);
+  if (fseek(handle, 3 * MAX_STR, SEEK_CUR)) goto DONE;
+
+  amount = fgetc(handle);
+  if ((amount < 0) || (amount > MAX_SONGS)) goto DONE;
+  for (d = 0; d < amount; d++)
+  {
+    for (c = 0; c < channels; c++)
+    {
+      length = fgetc(handle);
+      if ((length < 0) || (length + 1 > MAX_SONGLEN + 2)) goto DONE;
+      if (fseek(handle, length + 1, SEEK_CUR)) goto DONE;
+    }
+  }
+
+  amount = fgetc(handle);
+  if ((amount < 0) || (amount >= MAX_INSTR)) goto DONE;
+  if (fseek(handle, amount * (9 + MAX_INSTRNAMELEN), SEEK_CUR)) goto DONE;
+
+  for (c = 0; c < MAX_TABLES; c++)
+  {
+    length = fgetc(handle);
+    if ((length < 0) || (length > MAX_TABLELEN)) goto DONE;
+    if (fseek(handle, length * 2, SEEK_CUR)) goto DONE;
+  }
+
+  amount = fgetc(handle);
+  if ((amount < 0) || (amount > MAX_PATT)) goto DONE;
+  for (c = 0; c < amount; c++)
+  {
+    length = fgetc(handle);
+    if ((length < 0) || (length * 4 > MAX_PATTROWS * 4 + 4)) goto DONE;
+    if (fseek(handle, length * 4, SEEK_CUR)) goto DONE;
+  }
+  // The structure must end inside the file, either exactly at its end or
+  // at one of the chunks GoatTracker Ultra appends
+  end = ftell(handle);
+  if (end > size) goto DONE;
+  if (end < size)
+  {
+    next = fgetc(handle);
+    if ((next != CHUNK_EDITORINFO) && (next != CHUNK_INSTRPAN) && (next != CHUNK_SIDTRACKER64)) goto DONE;
+  }
+  ok = 1;
+
+  DONE:
+  fseek(handle, start, SEEK_SET);
+  return ok;
+}
+
+// Validation result for a load: the song is left unchanged if it fails
+static int checksongfile(FILE *handle)
+{
+  if (validatesongfile(handle, MAX_CHN)) return LOAD_OK;
+  return validatesongfile(handle, 6) ? LOAD_MULTICHANNEL : LOAD_DAMAGED;
+}
+
 void loadsong(void)
 {
   int c;
   int ok = 0;
   char ident[4];
   FILE *handle;
+  int instrcount = 0;
 
+  loadresult = LOAD_OK;
   handle = fopen(songfilename, "rb");
 
   if (handle)
@@ -192,6 +355,13 @@ void loadsong(void)
       int length;
       int amount;
       int loadsize;
+
+      loadresult = checksongfile(handle);
+      if (loadresult != LOAD_OK)
+      {
+        fclose(handle);
+        return;
+      }
       clearsong(1,1,1,1,1);
       ok = 1;
 
@@ -214,6 +384,7 @@ void loadsong(void)
       }
       // Read instruments
       amount = fread8(handle);
+      instrcount = amount;
       for (c = 1; c <= amount; c++)
       {
         instr[c].ad = fread8(handle);
@@ -241,6 +412,7 @@ void loadsong(void)
         length = fread8(handle) * 4;
         fread(pattern[c], length, 1, handle);
       }
+      readsongchunks(handle, instrcount);
       countpatternlengths();
       songchange();
     }
@@ -1235,6 +1407,11 @@ void clearsong(int cs, int cp, int ci, int ct, int cn)
 
   stopsong();
 
+  // Extras carried over from GoatTracker Ultra songs belong to the old song
+  if (ci) instrpanloaded = 0;
+  if (cp) songsidtracker64 = 0;
+  songsettingsloaded = 0;
+
   masterfader = 0x0f;
   epmarkchn = -1;
   etmarknum = -1;
@@ -1585,6 +1762,8 @@ void mergesong(void)
   int instrbase;
   int tablebase[MAX_TABLES];
 
+  mergeresult = MERGE_OK;
+
   // Determine amount of patterns & instruments
   countpatternlengths();
   highestusedinstr = 0;
@@ -1630,13 +1809,22 @@ void mergesong(void)
       int amount;
       int loadsize;
 
+      if (checksongfile(handle) != LOAD_OK)
+      {
+        mergeresult = MERGE_BADFILE;
+        goto ABORT;
+      }
+
       // Skip infotexts
       fseek(handle, sizeof songname + sizeof authorname + sizeof copyrightname, SEEK_CUR);
 
       // Read songorderlists
       amount = fread8(handle);
       if (amount + songbase > MAX_SONGS)
+      {
+        mergeresult = MERGE_NOSONGS;
         goto ABORT;
+      }
       for (d = 0; d < amount; d++)
       {
         for (c = 0; c < MAX_CHN; c++)
@@ -1656,7 +1844,10 @@ void mergesong(void)
       // Read instruments
       amount = fread8(handle);
       if (amount + instrbase > MAX_INSTR)
+      {
+        mergeresult = MERGE_NOINSTRUMENTS;
         goto ABORT;
+      }
       for (c = 1; c <= amount; c++)
       {
         instr[c + instrbase].ad = fread8(handle);
@@ -1683,7 +1874,10 @@ void mergesong(void)
       {
         loadsize = fread8(handle);
         if (loadsize + tablebase[c] > MAX_TABLELEN)
+        {
+          mergeresult = MERGE_NOTABLES;
           goto ABORT;
+        }
         fread(&ltable[c][tablebase[c]], loadsize, 1, handle);
         fread(&rtable[c][tablebase[c]], loadsize, 1, handle);
         // Remap jumps and tablecommands
@@ -1708,7 +1902,10 @@ void mergesong(void)
       // Read patterns
       amount = fread8(handle);
       if (amount + pattbase > MAX_PATT)
+      {
+        mergeresult = MERGE_NOPATTERNS;
         goto ABORT;
+      }
 
       for (c = 0; c < amount; c++)
       {
@@ -1734,7 +1931,7 @@ void mergesong(void)
   }
 
   ABORT:
-  fclose(handle);
+  if (handle) fclose(handle);
   countpatternlengths();
   songchange();
 }

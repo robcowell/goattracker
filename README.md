@@ -87,11 +87,28 @@ Closing the window, quitting or opening another song asks first, and **Save…**
 
 ![Save changes prompt](docs/screenshots/unsaved-prompt.png)
 
+### Saving, backups and safety
+
+- **Ctrl+S** saves over the current file from anywhere; **Save Song As…** (F11) asks for a name.
+- **Automatic backups**: every 30 seconds a changed song is copied to `~/.goattrk/backups/`, with a timestamp in the name. The newest 20 per song are kept. The interval is set in Preferences, which also has a button to open the folder.
+- **Damaged files are refused safely.** The stock loader trusts every length in a `.sng` file, so a truncated file, or a 6-channel song from GoatTracker Stereo or Ultra, could crash it. Files are now checked first and the current song is left untouched.
+- **Drag and drop** a `.sng` onto the window to open it, or an `.ins` to load it into the current instrument.
+- **Merging** tells you when the song runs out of subtunes, instruments, table rows or patterns part way, instead of stopping silently. Ctrl+Z undoes the partial merge.
+
+### Settings that travel with the song
+
+Songs are saved with the editor-settings block that [GoatTracker Ultra](https://github.com/jpage8580/GTUltra) introduced: SID model, PAL/NTSC, speed multiplier, hard-restart ADSR and the playroutine optimisations. Opening the song restores them, here or in GoatTracker Ultra. The block is appended after the normal song data, which stock GoatTracker 2 ignores, so files stay compatible. GoatTracker Ultra's per-instrument pan values and SIDTracker64-mode flag are kept when you save, and you're warned that a SIDTracker64-mode song will sound different here.
+
+### Preferences
+
+The settings that used to be command-line options or hand edits to `goattrk2.cfg` are in **Preferences** (Ctrl+,): buffer length, mixing rate, SID emulation and interpolation, PAL/NTSC timing, HardSID and CatWeasel, the playroutine optimisations, and the backup interval. `goattrk2.cfg` keeps its stock format; settings of this edition go in `~/.goattrk/gtkedition.ini`.
+
 ### Menus, toolbar and status bar
 
 - **Header bar:** transport controls, follow-play, and undo/redo.
 - **Toolbar:** edit/jam mode, octave, row highlight step, note-entry layout (Protracker, DMC or Janko), SID model, speed multiplier and the hard-restart ADSR. These used to be hidden behind Shift+F-key combinations.
-- **Status bar:** playback time and each channel's position.
+- **Status bar:** playback time, each channel's position, and a plain-language description of the item under the cursor. For example, `F0C` reads "Tempo 12 on all channels", and a table row reads "Set pulse width 840".
+- **Instrument list:** shows how many patterns use each instrument, and dims unused ones.
 
 | Main menu | View menu |
 | --- | --- |

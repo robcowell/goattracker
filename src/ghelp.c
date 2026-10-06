@@ -33,6 +33,8 @@ static char *genkeys[] = {
   "DEL Delete row change patt. length)",
   "SHIFT+ESC Clear/optimize all musicdata",
   "ESC Exit program",
+  "CTRL+S Save the song (asks for a name the first time)",
+  "CTRL+, Preferences",
   "CTRL+Z Undo",
   "CTRL+SHIFT+Z, CTRL+Y Redo",
   NULL

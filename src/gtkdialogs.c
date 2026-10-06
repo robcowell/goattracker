@@ -7,6 +7,7 @@
 
 #include <string.h>
 #include <unistd.h>
+#include <glib/gstdio.h>
 #include "gtkui.h"
 
 //
@@ -152,13 +153,64 @@ static int checkfile(const char *path, const char *ident, const char *what)
 // save/discard prompt)
 static void (*aftersave)(void) = NULL;
 
-static void onsongopened(const char *path, gpointer data)
+static void reportmerge(void)
 {
-  char message[MAX_PATHNAME + 32];
+  static const char *what[] = {"", "subtunes", "instruments", "table rows", "patterns"};
+  char body[256];
+
+  if (mergeresult == MERGE_OK) return;
+  if (mergeresult == MERGE_BADFILE)
+  {
+    alert("Could Not Merge the Song", "The file is damaged or uses more than 3 channels, so nothing was merged.");
+    return;
+  }
+  snprintf(body, sizeof body, "The song has run out of %s, so only part of the other song was merged. "
+    "Press Ctrl+Z to undo the merge.", what[mergeresult]);
+  alert("Merge Incomplete", body);
+}
+
+// Warn about GoatTracker Ultra features this editor doesn't support
+static void reportsongextras(void)
+{
+  char body[256];
+
+  if (songsidchannels > MAX_CHN)
+  {
+    snprintf(body, sizeof body, "This song was made for %d channels (GoatTracker Stereo or Ultra). "
+      "Only 3-channel songs are supported, so it will not play or save correctly.", songsidchannels);
+    alert("Unsupported Song", body);
+  }
+  else if (songsidtracker64)
+    alert("SIDTracker64 Mode Song", "This song was made in GoatTracker Ultra's SIDTracker64 mode, where empty rows "
+      "release notes. It will sound different here. The mode setting is kept when you save.");
+}
+
+static void reportloadfailure(void)
+{
+  if (loadresult == LOAD_MULTICHANNEL)
+    alert("Unsupported Song", "This song uses 6 channels (GoatTracker Stereo or Ultra). "
+      "Only 3-channel songs are supported. The current song was not changed.");
+  else if (loadresult == LOAD_DAMAGED)
+    alert("Damaged Song File", "The file is damaged or not a GoatTracker v2 song. "
+      "The current song was not changed.");
+}
+
+// A song named on the command line was loaded before sound started
+void ui_afterstartupload(void)
+{
+  if (songsettingsloaded) ui_restartsound();
+  if (loadresult != LOAD_OK) reportloadfailure();
+  else reportsongextras();
+}
+
+// Open or merge the song at path (from the file chooser or drag and drop)
+void ui_opensongpath(const char *path, int merge)
+{
+  char message[MAX_PATHNAME + 64];
 
   if (!checkfile(path, "GTS", "song")) return;
   if (!splitpath(path, songpath, songfilename)) return;
-  if (GPOINTER_TO_INT(data))
+  if (merge)
   {
     // Merging adds to the song, so it can be undone
     mergesong();
@@ -167,11 +219,28 @@ static void onsongopened(const char *path, gpointer data)
   else
   {
     loadsong();
+    if (loadresult != LOAD_OK)
+    {
+      reportloadfailure();
+      return;
+    }
     undo_reset();
+    // Songs saved by GoatTracker Ultra (and this editor) carry their
+    // playback settings
+    if (songsettingsloaded) ui_restartsound();
   }
-  snprintf(message, sizeof message, "%s %s", GPOINTER_TO_INT(data) ? "Merged" : "Loaded", ui_toutf8(songfilename));
+  snprintf(message, sizeof message, "%s %s%s", merge ? "Merged" : "Loaded", ui_toutf8(songfilename),
+    ((!merge) && (songsettingsloaded)) ? " with its saved settings" : "");
   ui_toast(message);
+  panels_syncall();
   ui_refresh();
+  if (merge) reportmerge();
+  else reportsongextras();
+}
+
+static void onsongopened(const char *path, gpointer data)
+{
+  ui_opensongpath(path, GPOINTER_TO_INT(data));
 }
 
 static void choosesongtoopen(void)
@@ -210,6 +279,90 @@ static void onsongsaved(const char *path, gpointer data)
     alert("Could Not Save the Song", "The file could not be written.");
     ui_refresh();
   }
+}
+
+// Ctrl+S: save over the current file, or ask for a name the first time
+void ui_quicksave(void)
+{
+  char *path;
+
+  if ((!strlen(loadedsongfilename)) || (!strlen(songpath)))
+  {
+    ui_savesong();
+    return;
+  }
+  path = g_build_filename(songpath, loadedsongfilename, NULL);
+  if (savesongfile(path))
+  {
+    undo_marksaved();
+    ui_toast("Song saved");
+  }
+  else alert("Could Not Save the Song", "The file could not be written.");
+  g_free(path);
+  ui_refresh();
+}
+
+//
+// Automatic backups
+//
+
+// Write a timestamped copy to ~/.goattrk/backups when the song has changed
+// since the last backup, keeping the newest MAX_BACKUPS of each song
+#define MAX_BACKUPS 20
+
+static int comparenames(gconstpointer a, gconstpointer b)
+{
+  return strcmp(*(const char **)a, *(const char **)b);
+}
+
+void ui_backup(void)
+{
+  static unsigned lastversion = 0;
+  char base[MAX_FILENAME];
+  char *dir, *prefix, *name, *path, *dot;
+  GDateTime *now;
+  GDir *listing;
+  GPtrArray *existing;
+  const char *entry;
+
+  if ((isplaying()) || (!undo_isdirty()) || (undo_version() == lastversion)) return;
+
+  g_strlcpy(base, strlen(loadedsongfilename) ? loadedsongfilename : "untitled", sizeof base);
+  dot = strrchr(base, '.');
+  if (dot) *dot = 0;
+  dir = g_build_filename(g_get_home_dir(), ".goattrk", "backups", NULL);
+  g_mkdir_with_parents(dir, 0755);
+
+  now = g_date_time_new_now_local();
+  prefix = g_strdup_printf("%s-", base);
+  name = g_date_time_format(now, "%Y%m%d-%H%M%S.sng");
+  path = g_strdup_printf("%s/%s%s", dir, prefix, name);
+  if (savesongfile(path)) lastversion = undo_version();
+
+  // Remove the oldest backups of this song beyond MAX_BACKUPS
+  existing = g_ptr_array_new_with_free_func(g_free);
+  listing = g_dir_open(dir, 0, NULL);
+  if (listing)
+  {
+    while ((entry = g_dir_read_name(listing)))
+      if ((g_str_has_prefix(entry, prefix)) && (g_str_has_suffix(entry, ".sng"))) g_ptr_array_add(existing, g_strdup(entry));
+    g_dir_close(listing);
+  }
+  g_ptr_array_sort(existing, comparenames);
+  while (existing->len > MAX_BACKUPS)
+  {
+    char *old = g_build_filename(dir, g_ptr_array_index(existing, 0), NULL);
+    g_remove(old);
+    g_free(old);
+    g_ptr_array_remove_index(existing, 0);
+  }
+
+  g_ptr_array_unref(existing);
+  g_free(path);
+  g_free(name);
+  g_free(prefix);
+  g_date_time_unref(now);
+  g_free(dir);
 }
 
 void ui_savesong(void)
@@ -253,6 +406,22 @@ void ui_confirmdiscard(void (*proceed)(void))
   adw_alert_dialog_set_close_response(ADW_ALERT_DIALOG(dialog), "cancel");
   g_signal_connect(dialog, "response", G_CALLBACK(ondiscardresponse), proceed);
   adw_dialog_present(dialog, GTK_WIDGET(mainwindow));
+}
+
+// Load the instrument at path into the current instrument slot
+void ui_loadinstrumentpath(const char *path)
+{
+  if (!einum)
+  {
+    ui_toast("Select an instrument to load into first");
+    return;
+  }
+  if (!checkfile(path, "GTI", "instrument")) return;
+  if (!splitpath(path, instrpath, instrfilename)) return;
+  loadinstrument();
+  undo_checkpoint(0);
+  ui_toast("Instrument loaded");
+  ui_refresh();
 }
 
 static void oninstrumentopened(const char *path, gpointer data)
@@ -685,4 +854,172 @@ void ui_showsoundfailure(void)
 {
   alert("Sound Could Not Be Started", "GoatTracker will run without sound output, and the song timer won't advance. "
     "Try a larger buffer (-B) or a different mixing rate (-M).");
+}
+
+//
+// Preferences
+//
+
+typedef enum
+{
+  PREF_BUFFER, PREF_MIXRATE, PREF_INTERPOLATION, PREF_TIMING, PREF_HARDSID, PREF_CATWEASEL,
+  PREF_FINEVIB, PREF_PULSEOPT, PREF_REALTIMEOPT, PREF_BACKUPS
+} PREFERENCE;
+
+static const unsigned mixrates[] = {11025, 22050, 32000, 44100, 48000};
+
+static void onprefspin(AdwSpinRow *row, GParamSpec *pspec, gpointer data)
+{
+  unsigned v = (unsigned)adw_spin_row_get_value(row);
+
+  switch (GPOINTER_TO_INT(data))
+  {
+    case PREF_BUFFER: b = v; break;
+    case PREF_HARDSID: hardsid = v; ui_restartsound(); break;
+    case PREF_BACKUPS: settings_backupinterval = v; ui_backupschanged(); break;
+  }
+}
+
+static void onprefcombo(AdwComboRow *row, GParamSpec *pspec, gpointer data)
+{
+  unsigned v = adw_combo_row_get_selected(row);
+
+  switch (GPOINTER_TO_INT(data))
+  {
+    case PREF_MIXRATE: mr = mixrates[v]; break;
+    case PREF_INTERPOLATION: interpolate = v; ui_restartsound(); break;
+    case PREF_TIMING:
+    ntsc = v;
+    customclockrate = 0;
+    ui_restartsound();
+    break;
+  }
+  ui_refresh();
+}
+
+static void onprefswitch(AdwSwitchRow *row, GParamSpec *pspec, gpointer data)
+{
+  unsigned v = adw_switch_row_get_active(row);
+
+  switch (GPOINTER_TO_INT(data))
+  {
+    case PREF_CATWEASEL: catweasel = v; ui_restartsound(); break;
+    case PREF_FINEVIB: usefinevib = v; finevibrato = v; break;
+    case PREF_PULSEOPT: optimizepulse = v; break;
+    case PREF_REALTIMEOPT: optimizerealtime = v; break;
+  }
+  ui_refresh();
+}
+
+static GtkWidget *prefgroup(GtkWidget *page, const char *title, const char *description)
+{
+  GtkWidget *group = adw_preferences_group_new();
+
+  adw_preferences_group_set_title(ADW_PREFERENCES_GROUP(group), title);
+  if (description) adw_preferences_group_set_description(ADW_PREFERENCES_GROUP(group), description);
+  adw_preferences_page_add(ADW_PREFERENCES_PAGE(page), ADW_PREFERENCES_GROUP(group));
+  return group;
+}
+
+static GtkWidget *prefspin(GtkWidget *group, const char *title, const char *subtitle, int min, int max,
+  int step, int value, PREFERENCE pref)
+{
+  GtkWidget *row = adw_spin_row_new_with_range(min, max, step);
+
+  adw_preferences_row_set_title(ADW_PREFERENCES_ROW(row), title);
+  if (subtitle) adw_action_row_set_subtitle(ADW_ACTION_ROW(row), subtitle);
+  adw_spin_row_set_value(ADW_SPIN_ROW(row), value);
+  g_signal_connect(row, "notify::value", G_CALLBACK(onprefspin), GINT_TO_POINTER(pref));
+  adw_preferences_group_add(ADW_PREFERENCES_GROUP(group), row);
+  return row;
+}
+
+static GtkWidget *prefcombo(GtkWidget *group, const char *title, const char *subtitle, const char *const *items,
+  int selected, PREFERENCE pref)
+{
+  GtkWidget *row = adw_combo_row_new();
+  GtkStringList *list = gtk_string_list_new(items);
+
+  adw_preferences_row_set_title(ADW_PREFERENCES_ROW(row), title);
+  if (subtitle) adw_action_row_set_subtitle(ADW_ACTION_ROW(row), subtitle);
+  adw_combo_row_set_model(ADW_COMBO_ROW(row), G_LIST_MODEL(list));
+  g_object_unref(list);
+  adw_combo_row_set_selected(ADW_COMBO_ROW(row), selected);
+  g_signal_connect(row, "notify::selected", G_CALLBACK(onprefcombo), GINT_TO_POINTER(pref));
+  adw_preferences_group_add(ADW_PREFERENCES_GROUP(group), row);
+  return row;
+}
+
+static GtkWidget *prefswitch(GtkWidget *group, const char *title, const char *subtitle, int active, PREFERENCE pref)
+{
+  GtkWidget *row = adw_switch_row_new();
+
+  adw_preferences_row_set_title(ADW_PREFERENCES_ROW(row), title);
+  if (subtitle) adw_action_row_set_subtitle(ADW_ACTION_ROW(row), subtitle);
+  adw_switch_row_set_active(ADW_SWITCH_ROW(row), active);
+  g_signal_connect(row, "notify::active", G_CALLBACK(onprefswitch), GINT_TO_POINTER(pref));
+  adw_preferences_group_add(ADW_PREFERENCES_GROUP(group), row);
+  return row;
+}
+
+static void onshowbackups(GtkButton *button, gpointer data)
+{
+  char *dir = g_build_filename(g_get_home_dir(), ".goattrk", "backups", NULL);
+  GFile *folder;
+  GtkFileLauncher *launcher;
+
+  g_mkdir_with_parents(dir, 0755);
+  folder = g_file_new_for_path(dir);
+  launcher = gtk_file_launcher_new(folder);
+  gtk_file_launcher_launch(launcher, mainwindow, NULL, NULL, NULL);
+  g_object_unref(launcher);
+  g_object_unref(folder);
+  g_free(dir);
+}
+
+void ui_preferences(void)
+{
+  static const char *mixratenames[] = {"11025 Hz", "22050 Hz", "32000 Hz", "44100 Hz", "48000 Hz", NULL};
+  static const char *interpolations[] = {"Fast", "Interpolated", "reSID-fp (distortion)",
+    "reSID-fp, interpolated", NULL};
+  static const char *timings[] = {"PAL (50 Hz)", "NTSC (60 Hz)", NULL};
+  AdwDialog *dialog = adw_preferences_dialog_new();
+  GtkWidget *page = adw_preferences_page_new();
+  GtkWidget *group, *row, *button;
+  int c, rate = 3;
+
+  for (c = 0; c < (int)G_N_ELEMENTS(mixrates); c++) if (mixrates[c] == mr) rate = c;
+
+  adw_preferences_page_set_title(ADW_PREFERENCES_PAGE(page), "General");
+  adw_preferences_page_set_icon_name(ADW_PREFERENCES_PAGE(page), "preferences-system-symbolic");
+
+  group = prefgroup(page, "Sound Output", "Buffer and mixing rate take effect after restarting GoatTracker.");
+  prefspin(group, "Buffer Length", "Milliseconds; raise it if playback stutters", MINBUF, MAXBUF, 10, b, PREF_BUFFER);
+  prefcombo(group, "Mixing Rate", NULL, mixratenames, rate, PREF_MIXRATE);
+  prefcombo(group, "SID Emulation", "reSID-fp models the 6581 filter distortion; interpolation costs more CPU",
+    interpolations, interpolate & 3, PREF_INTERPOLATION);
+  prefcombo(group, "Timing", NULL, timings, ntsc & 1, PREF_TIMING);
+
+  group = prefgroup(page, "Hardware", NULL);
+  prefspin(group, "HardSID Device", "0 = off, 1 = first device, and so on", 0, 8, 1, hardsid, PREF_HARDSID);
+  prefswitch(group, "CatWeasel MK3 SID", NULL, catweasel, PREF_CATWEASEL);
+
+  group = prefgroup(page, "Playroutine", "Saved with each song. They affect the editor's playback and the packed music.");
+  prefswitch(group, "Fine Vibrato", "Convert old-style vibrato parameters to finer speedtable values", usefinevib, PREF_FINEVIB);
+  prefswitch(group, "Pulse Optimization", "Skip pulsetable execution when a new note or pattern starts", optimizepulse, PREF_PULSEOPT);
+  prefswitch(group, "Realtime Command Optimization", "Skip portamento and vibrato on the first tick of each row",
+    optimizerealtime, PREF_REALTIMEOPT);
+
+  group = prefgroup(page, "Editor", NULL);
+  row = prefspin(group, "Automatic Backups", "Seconds between backups of changed songs; 0 turns them off",
+    0, 600, 10, settings_backupinterval, PREF_BACKUPS);
+  button = gtk_button_new_from_icon_name("folder-open-symbolic");
+  gtk_widget_set_valign(button, GTK_ALIGN_CENTER);
+  gtk_widget_set_tooltip_text(button, "Show the backups folder");
+  gtk_widget_add_css_class(button, "flat");
+  g_signal_connect(button, "clicked", G_CALLBACK(onshowbackups), NULL);
+  adw_action_row_add_suffix(ADW_ACTION_ROW(row), button);
+
+  adw_preferences_dialog_add(ADW_PREFERENCES_DIALOG(dialog), ADW_PREFERENCES_PAGE(page));
+  adw_dialog_present(dialog, GTK_WIDGET(mainwindow));
 }

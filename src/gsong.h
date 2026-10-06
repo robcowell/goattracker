@@ -1,6 +1,19 @@
 #ifndef GSONG_H
 #define GSONG_H
 
+// Outcome of mergesong(): which limit stopped a merge part way
+#define MERGE_OK 0
+#define MERGE_NOSONGS 1
+#define MERGE_NOINSTRUMENTS 2
+#define MERGE_NOTABLES 3
+#define MERGE_NOPATTERNS 4
+#define MERGE_BADFILE 5
+
+// Outcome of loadsong() for GTS3-GTS5 files that fail validation
+#define LOAD_OK 0
+#define LOAD_DAMAGED 1
+#define LOAD_MULTICHANNEL 2
+
 #ifndef GSONG_C
 extern INSTR instr[MAX_INSTR];
 extern unsigned char ltable[MAX_TABLES][MAX_TABLELEN];
@@ -14,9 +27,15 @@ extern int pattlen[MAX_PATT];
 extern int songlen[MAX_SONGS][MAX_CHN];
 extern int highestusedpattern;
 extern int highestusedinstr;
+extern int songsidtracker64;
+extern int songsidchannels;
+extern int songsettingsloaded;
+extern int mergeresult;
+extern int loadresult;
 #endif
 
 void loadsong(void);
+int savesongfile(const char *path);
 void mergesong(void);
 void loadinstrument(void);
 int savesong(void);
