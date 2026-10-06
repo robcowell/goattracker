@@ -335,6 +335,21 @@ static int checksongfile(FILE *handle)
   return validatesongfile(handle, 6) ? LOAD_MULTICHANNEL : LOAD_DAMAGED;
 }
 
+// Pattern instrument numbers index arrays of MAX_INSTR entries (instr[], and
+// instrused[] in the packer and optimizer), but a song file can hold any
+// byte there. Keep them in range after a load, as the pattern editor does
+// when they are typed.
+static void maskpatterninstruments(void)
+{
+  int c, d;
+
+  for (c = 0; c < MAX_PATT; c++)
+  {
+    for (d = 0; d <= MAX_PATTROWS; d++)
+      pattern[c][d*4+1] &= (MAX_INSTR - 1);
+  }
+}
+
 void loadsong(void)
 {
   int c;
@@ -413,6 +428,7 @@ void loadsong(void)
         fread(pattern[c], length, 1, handle);
       }
       readsongchunks(handle, instrcount);
+      maskpatterninstruments();
       countpatternlengths();
       songchange();
     }
@@ -495,6 +511,7 @@ void loadsong(void)
           }
         }
       }
+      maskpatterninstruments();
       countpatternlengths();
       songchange();
     }
@@ -1843,7 +1860,8 @@ void mergesong(void)
       }
       // Read instruments
       amount = fread8(handle);
-      if (amount + instrbase > MAX_INSTR)
+      // Instruments go to instr[instrbase + 1] .. instr[instrbase + amount]
+      if (amount + instrbase >= MAX_INSTR)
       {
         mergeresult = MERGE_NOINSTRUMENTS;
         goto ABORT;
@@ -1932,6 +1950,7 @@ void mergesong(void)
 
   ABORT:
   if (handle) fclose(handle);
+  maskpatterninstruments();
   countpatternlengths();
   songchange();
 }
