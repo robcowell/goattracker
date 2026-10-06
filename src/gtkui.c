@@ -297,6 +297,7 @@ void ui_goback(void)
 static void runkey(unsigned raw, unsigned ascii, int shift, int allowhex)
 {
   int oldmode = editmode;
+  int oldrecord = recordmode;
   PLACE from;
 
   key = ascii;
@@ -321,12 +322,25 @@ static void runkey(unsigned raw, unsigned ascii, int shift, int allowhex)
   if ((rawkey == KEY_ENTER) && (editmode != oldmode)) pushplace(&from);
 
   if (editmode != oldmode) ui_focuseditmode();
+  if (recordmode != oldrecord) jam_releaseall();
   ui_refresh();
 }
 
 void ui_runkey(unsigned raw, unsigned ascii, int shift)
 {
   runkey(raw, ascii, shift, 1);
+}
+
+static void onkeyreleased(GtkEventControllerKey *controller, guint keyval, guint keycode,
+  GdkModifierType state, gpointer data)
+{
+  jam_noteoff(rawkeyof(controller, keyval, keycode));
+}
+
+static void onactivechanged(GtkWindow *window, GParamSpec *pspec, gpointer data)
+{
+  // Key releases don't arrive while another window has the focus
+  if (!gtk_window_is_active(window)) jam_releaseall();
 }
 
 static gboolean onkeypressed(GtkEventControllerKey *controller, guint keyval, guint keycode,
@@ -438,6 +452,20 @@ static gboolean onkeypressed(GtkEventControllerKey *controller, guint keyval, gu
     eipos = 0;
     runkey(raw, ascii, shift, 0);
     return TRUE;
+  }
+
+  // Jam mode: note keys on the pattern editor play on any free channel and
+  // stop when they are released
+  if ((!recordmode) && (focus == patterngrid) && (editmode == EDIT_PATTERN) && (!epcolumn) && (ascii) &&
+    (!(state & (GDK_SHIFT_MASK | GDK_CONTROL_MASK | GDK_ALT_MASK))))
+  {
+    int note = pattern_notekey(raw);
+
+    if (note >= 0)
+    {
+      jam_noteon(raw, note);
+      return TRUE;
+    }
   }
 
   if ((focus == patterngrid) || (focus == ordergrid) || (focus == tablegrid) || (!focus))
@@ -649,6 +677,7 @@ static void onrecordtoggled(GtkToggleButton *button, gpointer data)
 {
   if (syncing) return;
   recordmode = gtk_toggle_button_get_active(button);
+  jam_releaseall();
   ui_refresh();
 }
 
@@ -1256,6 +1285,12 @@ static void loadsettings(void)
     v = g_key_file_get_boolean(keys, "editor", "auto-next-pattern", &error);
     if (!error) autonextpattern = v;
     g_clear_error(&error);
+    {
+      char *name = g_key_file_get_string(keys, "sound", "midi-input", NULL);
+      if ((name) && (name[0]) && (!midi_setinput(name)))
+        g_printerr("goattrk2: MIDI input \"%s\" is not available\n", name);
+      g_free(name);
+    }
     v = g_key_file_get_boolean(keys, "view", "piano", &error);
     if (!error) settings_showpiano = v;
     g_clear_error(&error);
@@ -1278,6 +1313,7 @@ static void savesettings(void)
   g_key_file_set_boolean(keys, "view", "describe-tables", settings_decodetables);
   g_key_file_set_integer(keys, "sound", "volume", mastervolume);
   g_key_file_set_integer(keys, "sound", "detune", sid_detune);
+  g_key_file_set_string(keys, "sound", "midi-input", settings_midiinput);
   g_key_file_set_boolean(keys, "editor", "auto-next-pattern", autonextpattern);
   g_key_file_set_boolean(keys, "view", "piano", settings_showpiano);
   g_key_file_set_boolean(keys, "view", "sid-registers", settings_showsidstate);
@@ -1419,7 +1455,9 @@ static void onactivate(GtkApplication *application, gpointer data)
   controller = gtk_event_controller_key_new();
   gtk_event_controller_set_propagation_phase(controller, GTK_PHASE_CAPTURE);
   g_signal_connect(controller, "key-pressed", G_CALLBACK(onkeypressed), NULL);
+  g_signal_connect(controller, "key-released", G_CALLBACK(onkeyreleased), NULL);
   gtk_widget_add_controller(window, controller);
+  g_signal_connect(window, "notify::is-active", G_CALLBACK(onactivechanged), NULL);
 
   g_signal_connect(window, "close-request", G_CALLBACK(oncloserequest), NULL);
   g_signal_connect(window, "notify::fullscreened", G_CALLBACK(onfullscreenchanged), NULL);

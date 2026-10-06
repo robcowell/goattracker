@@ -980,6 +980,16 @@ static GtkWidget *prefswitch(GtkWidget *group, const char *title, const char *su
   return row;
 }
 
+static void onmidiinput(AdwComboRow *row, GParamSpec *pspec, gpointer data)
+{
+  GtkStringObject *item = adw_combo_row_get_selected_item(row);
+  const char *name;
+
+  if ((!item) || (!adw_combo_row_get_selected(row))) name = "";
+  else name = gtk_string_object_get_string(item);
+  if (!midi_setinput(name)) ui_toast("That MIDI input could not be connected");
+}
+
 static void onshowbackups(GtkButton *button, gpointer data)
 {
   char *dir = g_build_filename(g_get_home_dir(), ".goattrk", "backups", NULL);
@@ -1020,6 +1030,38 @@ void ui_preferences(void)
   prefspin(group, "Volume", "Percent; exported WAV files are not affected", 0, 100, 5, mastervolume, PREF_VOLUME);
   prefspin(group, "Detune", "Cents; runs the emulated SID slightly fast or slow to match other instruments. "
     "WAV exports are detuned too.", -100, 100, 1, sid_detune, PREF_DETUNE);
+
+  {
+    // MIDI sources from the ALSA sequencer; the saved one stays listed when
+    // it isn't plugged in
+    char **sources = midi_listsources();
+    GtkStringList *list = gtk_string_list_new(NULL);
+    int selected = 0;
+
+    gtk_string_list_append(list, "Off");
+    for (c = 0; sources[c]; c++)
+    {
+      gtk_string_list_append(list, sources[c]);
+      if (!strcmp(sources[c], settings_midiinput)) selected = c + 1;
+    }
+    if ((settings_midiinput[0]) && (!selected))
+    {
+      gtk_string_list_append(list, settings_midiinput);
+      selected = c + 1;
+    }
+    g_strfreev(sources);
+
+    group = prefgroup(page, "MIDI", NULL);
+    row = adw_combo_row_new();
+    adw_preferences_row_set_title(ADW_PREFERENCES_ROW(row), "MIDI Input");
+    adw_action_row_set_subtitle(ADW_ACTION_ROW(row), "Notes are entered at the pattern cursor in edit mode, "
+      "and played on any free channel in jam mode");
+    adw_combo_row_set_model(ADW_COMBO_ROW(row), G_LIST_MODEL(list));
+    g_object_unref(list);
+    adw_combo_row_set_selected(ADW_COMBO_ROW(row), selected);
+    g_signal_connect(row, "notify::selected", G_CALLBACK(onmidiinput), NULL);
+    adw_preferences_group_add(ADW_PREFERENCES_GROUP(group), row);
+  }
 
   group = prefgroup(page, "Hardware", NULL);
   prefspin(group, "HardSID Device", "0 = off, 1 = first device, and so on", 0, 8, 1, hardsid, PREF_HARDSID);

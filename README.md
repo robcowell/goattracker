@@ -128,6 +128,8 @@ The settings that used to be command-line options or hand edits to `goattrk2.cfg
 - **SID registers** (View → SID Registers) under the pattern editor show each voice's note, waveform bits, ADSR, pulse width and frequency, and the filter's type, resonance, routing, volume and cutoff, as the playroutine writes them.
 - **Volume** is a slider in the toolbar and in Preferences. It only affects what you hear, not exported WAV files.
 - **Detune** in Preferences runs the emulated SID up to a semitone fast or slow, to play along with other instruments. The tempo is unchanged.
+- **Polyphonic jam:** in jam mode (Space), note keys in the pattern editor play on whichever channel is free, starting with the cursor's, so you can play chords. Each note stops when its key is released. Muted channels are left alone.
+- **MIDI input:** choose a keyboard or other MIDI source under **Preferences → MIDI**. In edit mode its notes are entered at the pattern cursor like typed ones (middle C is C-4); in jam mode they play polyphonically. GoatTracker also appears as an ALSA sequencer client, so other sources can be connected to it with `aconnect` or a patchbay.
 - **Continue into the next pattern** in Preferences: moving the cursor past the end of a pattern goes on to the next pattern in that channel's orderlist, and past the start goes back to the previous one.
 
 ### Menus, toolbar and status bar
@@ -182,16 +184,16 @@ The grids use a scalable monospace font. **View → Larger Text** (or `-w2`…`-
 
 ## Building
 
-You need a C/C++ compiler, GTK 4.10 or later, libadwaita 1.5 or later, and SDL2. On Debian or Ubuntu (24.04 or later):
+You need a C/C++ compiler, GTK 4.10 or later, libadwaita 1.5 or later, SDL2 and the ALSA library (for MIDI input). On Debian or Ubuntu (24.04 or later):
 
 ```sh
-sudo apt install build-essential pkg-config libgtk-4-dev libadwaita-1-dev libsdl2-dev
+sudo apt install build-essential pkg-config libgtk-4-dev libadwaita-1-dev libsdl2-dev libasound2-dev
 ```
 
 On Fedora:
 
 ```sh
-sudo dnf install gcc gcc-c++ make pkgconf gtk4-devel libadwaita-devel SDL2-devel
+sudo dnf install gcc gcc-c++ make pkgconf gtk4-devel libadwaita-devel SDL2-devel alsa-lib-devel
 ```
 
 Then build and run:
