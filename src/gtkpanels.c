@@ -462,6 +462,12 @@ void panels_setscale(int scale)
   gtk_drawing_area_set_content_height(GTK_DRAWING_AREA(envelopearea), 36 + 8 * (textscale - 1));
 }
 
+// The divider between the instrument list and editor
+GtkWidget *panels_instrpaned(void)
+{
+  return instrroot;
+}
+
 GtkWidget *panel_instruments_new(void)
 {
   static const char *adsrnames[] = {"Attack", "Decay", "Sustain", "Release"};
