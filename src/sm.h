@@ -11,6 +11,7 @@
 #include "ginfo.h"
 #include "ghost.h"
 #include "garrange.h"
+#include "ginput.h"
 
 // smui.c
 extern GtkWindow *sm_window;
@@ -35,5 +36,8 @@ void roll_show(int chnum, int patt, int trans);
 void roll_refresh(void);
 void roll_refreshinstruments(void);
 void roll_tick(void);
+void roll_noteon(unsigned id, int note);
+void roll_noteoff(unsigned id);
+void roll_releaseall(void);
 
 #endif
