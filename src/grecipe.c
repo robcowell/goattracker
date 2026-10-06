@@ -193,7 +193,7 @@ static void pulsetable(const RECIPE *rc, PROGRAM *p)
 }
 
 // Voices that play an instrument: those whose patterns set it
-static int usedvoices(int instrnum)
+int recipe_usedvoices(int instrnum)
 {
   int s, c, i, row, mask = 0;
 
@@ -206,6 +206,12 @@ static int usedvoices(int instrnum)
         for (row = 0; row < pattlen[patt]; row++)
           if (pattern[patt][row * 4 + 1] == instrnum) mask |= 1 << c;
       }
+  return mask;
+}
+
+static int usedvoices(int instrnum)
+{
+  int mask = recipe_usedvoices(instrnum);
   return mask ? mask : 7;
 }
 

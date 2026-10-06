@@ -18,7 +18,8 @@ static AdwToastOverlay *toasts;
 static AdwWindowTitle *title;
 static GtkButton *playbutton;
 static GtkSpinButton *tunespin;
-static GtkLabel *statuslabel, *timelabel;
+static GtkLabel *statuslabel, *timelabel, *limitslabel, *filterlabel;
+static GtkWidget *filterbutton;
 static int subtune;
 static int wasplaying;
 static double songseconds = -1;
@@ -148,6 +149,43 @@ static void updatetitle(void)
   setaction("redo", undo_canredo());
 }
 
+// What the song uses of the chip's and the song file's limits, and whether
+// instruments compete for the one filter
+static void updatehealth(void)
+{
+  static unsigned char used[MAX_PATT];
+  int s, c, i, patterns = 0, instruments = 0, filtered = 0, first = 0;
+  char buf[400];
+
+  memset(used, 0, sizeof used);
+  for (s = 0; s < MAX_SONGS; s++)
+    for (c = 0; c < MAX_CHN; c++)
+      for (i = 0; i < songlen[s][c]; i++)
+        if (songorder[s][c][i] < MAX_PATT) used[songorder[s][c][i]] = 1;
+  for (i = 0; i < MAX_PATT; i++) patterns += used[i];
+  for (i = 1; i < MAX_INSTR; i++)
+  {
+    int voices = recipe_usedvoices(i);
+    if ((voices) || (instr[i].name[0])) instruments++;
+    if ((voices) && (instr[i].ptr[FTBL]))
+    {
+      if (!filtered) first = i;
+      filtered++;
+    }
+  }
+  snprintf(buf, sizeof buf, "%d of %d patterns \u00B7 %d of %d instruments", patterns, MAX_PATT, instruments,
+    MAX_INSTR - 1);
+  gtk_label_set_text(limitslabel, buf);
+  gtk_widget_set_visible(filterbutton, filtered > 1);
+  if (filtered > 1)
+  {
+    snprintf(buf, sizeof buf, "%d instruments (%02X and others) use the filter, but the SID has only one. "
+      "Whichever played last controls it, for all the voices it filters, so these instruments may change each "
+      "other's sound. Turning the filter off on all but one of them avoids that.", filtered, first);
+    gtk_label_set_text(filterlabel, buf);
+  }
+}
+
 // After loading a song or switching subtunes
 void sm_songchanged(void)
 {
@@ -160,6 +198,7 @@ void sm_songchanged(void)
   sound_refresh();
   arrange_songchanged();
   sm_setstatus("Click a clip to select it, drag it to move it (hold Ctrl to copy), right-click for more.");
+  updatehealth();
   measuresong();
   updatetime();
   updateplaybutton();
@@ -174,6 +213,7 @@ void sm_edited(void)
   host_unlock();
   undo_checkpoint(0);
   updatetitle();
+  updatehealth();
   measuresong();
 }
 
@@ -185,6 +225,7 @@ static void undoredo(int redo)
   roll_refreshinstruments();
   sound_refresh();
   updatetitle();
+  updatehealth();
   measuresong();
 }
 
@@ -236,6 +277,20 @@ static void opensong(const char *path)
   setsongfile(path);
   subtune = 0;
   sm_songchanged();
+}
+
+// A song made in code (a template) replaces the current one
+void sm_newsong(void)
+{
+  undo_reset();
+  setsongfile(NULL);
+  subtune = 0;
+  sm_songchanged();
+}
+
+void sm_opensong(const char *path)
+{
+  opensong(path);
 }
 
 static void newsong(void)
@@ -571,11 +626,17 @@ static void act(GSimpleAction *action, GVariant *parameter, gpointer data)
   else if (!strcmp(name, "undo")) undoredo(0);
   else if (!strcmp(name, "redo")) undoredo(1);
   else if (!strcmp(name, "midi")) choosemidi();
+  else if (!strcmp(name, "template")) confirmdiscard(start_newfromtemplate);
+  else if (!strcmp(name, "export-audio")) export_audio();
+  else if (!strcmp(name, "export-sid")) export_c64(FORMAT_SID);
+  else if (!strcmp(name, "export-prg")) export_c64(FORMAT_PRG);
+  else if (!strcmp(name, "learn")) start_learn();
   else if (!strcmp(name, "quit")) confirmdiscard(quitnow);
 }
 
 static const GActionEntry winactions[] = {
-  {"new", act}, {"open", act}, {"save", act}, {"save-as", act}, {"undo", act}, {"redo", act}, {"midi", act}, {"quit", act}};
+  {"new", act}, {"open", act}, {"save", act}, {"save-as", act}, {"undo", act}, {"redo", act}, {"midi", act}, {"quit", act}, {"template", act}, {"export-audio", act},
+  {"export-sid", act}, {"export-prg", act}, {"learn", act}};
 
 static void addshortcut(GtkShortcutController *sc, const char *accel, GtkShortcutFunc func)
 {
@@ -591,6 +652,7 @@ static GMenuModel *primarymenu(void)
   GMenu *menu = g_menu_new(), *s = g_menu_new();
 
   g_menu_append(s, "_New Song", "win.new");
+  g_menu_append(s, "New Song with a _Beat", "win.template");
   g_menu_append(s, "_Open…", "win.open");
   g_menu_append_section(menu, NULL, G_MENU_MODEL(s));
   g_object_unref(s);
@@ -600,6 +662,7 @@ static GMenuModel *primarymenu(void)
   g_menu_append_section(menu, NULL, G_MENU_MODEL(s));
   g_object_unref(s);
   s = g_menu_new();
+  g_menu_append(s, "_Learn the SID", "win.learn");
   g_menu_append(s, "_MIDI Input…", "win.midi");
   g_menu_append_section(menu, NULL, G_MENU_MODEL(s));
   g_object_unref(s);
@@ -624,7 +687,8 @@ static void onactivate(GtkApplication *application, gpointer data)
   static const char *accels[][3] = {
     {"win.new", "<Control>n", NULL}, {"win.open", "<Control>o", NULL}, {"win.save", "<Control>s", NULL},
     {"win.save-as", "<Control><Shift>s", NULL}, {"win.undo", "<Control>z", NULL},
-    {"win.redo", "<Control><Shift>z", "<Control>y"}, {"win.quit", "<Control>q", NULL}};
+    {"win.redo", "<Control><Shift>z", "<Control>y"}, {"win.quit", "<Control>q", NULL},
+    {"win.export-audio", "<Control>e", NULL}, {"win.learn", "F1", NULL}};
   GtkWidget *view, *header, *content, *button, *box, *bottom, *label;
   GtkEventController *controller;
   GtkDropTarget *drop;
@@ -678,6 +742,18 @@ static void onactivate(GtkApplication *application, gpointer data)
   gtk_box_append(GTK_BOX(box), iconbutton("edit-redo-symbolic", "Redo (Ctrl+Shift+Z)", "win.redo"));
   adw_header_bar_pack_end(ADW_HEADER_BAR(header), box);
   adw_header_bar_pack_end(ADW_HEADER_BAR(header), iconbutton("document-save-symbolic", "Save (Ctrl+S)", "win.save"));
+  {
+    GMenu *m = g_menu_new();
+    g_menu_append(m, "Audio (WAV or MP3)…", "win.export-audio");
+    g_menu_append(m, "SID Music File…", "win.export-sid");
+    g_menu_append(m, "C64 Program (PRG)…", "win.export-prg");
+    button = gtk_menu_button_new();
+    gtk_menu_button_set_icon_name(GTK_MENU_BUTTON(button), "document-send-symbolic");
+    gtk_widget_set_tooltip_text(button, "Export the song");
+    gtk_menu_button_set_menu_model(GTK_MENU_BUTTON(button), G_MENU_MODEL(m));
+    g_object_unref(m);
+    adw_header_bar_pack_end(ADW_HEADER_BAR(header), button);
+  }
   adw_toolbar_view_add_top_bar(ADW_TOOLBAR_VIEW(view), header);
 
   content = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
@@ -710,6 +786,26 @@ static void onactivate(GtkApplication *application, gpointer data)
   gtk_label_set_ellipsize(statuslabel, PANGO_ELLIPSIZE_END);
   gtk_widget_set_hexpand(GTK_WIDGET(statuslabel), TRUE);
   gtk_box_append(GTK_BOX(bottom), GTK_WIDGET(statuslabel));
+  limitslabel = GTK_LABEL(gtk_label_new(""));
+  gtk_widget_add_css_class(GTK_WIDGET(limitslabel), "dim-label");
+  gtk_widget_set_tooltip_text(GTK_WIDGET(limitslabel), "How much of what a song can hold this one uses");
+  gtk_box_append(GTK_BOX(bottom), GTK_WIDGET(limitslabel));
+  {
+    GtkWidget *popover = gtk_popover_new();
+    filterlabel = GTK_LABEL(gtk_label_new(""));
+    gtk_label_set_wrap(GTK_LABEL(filterlabel), TRUE);
+    gtk_label_set_max_width_chars(filterlabel, 40);
+    gtk_popover_set_child(GTK_POPOVER(popover), GTK_WIDGET(filterlabel));
+    filterbutton = gtk_menu_button_new();
+    gtk_menu_button_set_label(GTK_MENU_BUTTON(filterbutton), "Filter shared");
+    gtk_menu_button_set_icon_name(GTK_MENU_BUTTON(filterbutton), "dialog-warning-symbolic");
+    gtk_menu_button_set_always_show_arrow(GTK_MENU_BUTTON(filterbutton), FALSE);
+    gtk_menu_button_set_popover(GTK_MENU_BUTTON(filterbutton), popover);
+    gtk_widget_add_css_class(filterbutton, "flat");
+    gtk_widget_add_css_class(filterbutton, "warning");
+    gtk_widget_set_visible(filterbutton, FALSE);
+    gtk_box_append(GTK_BOX(bottom), filterbutton);
+  }
   timelabel = GTK_LABEL(gtk_label_new(""));
   gtk_widget_add_css_class(GTK_WIDGET(timelabel), "numeric");
   gtk_box_append(GTK_BOX(bottom), GTK_WIDGET(timelabel));
@@ -747,6 +843,7 @@ static void onactivate(GtkApplication *application, gpointer data)
   sm_songchanged();
   gtk_window_present(sm_window);
   if (soundinitfailed) sm_toast("Sound output could not be started");
+  if (!strlen(songfilename)) start_welcome();
 }
 
 int main(int argc, char **argv)

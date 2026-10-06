@@ -19,6 +19,8 @@ void sm_toast(const char *message);
 void sm_setstatus(const char *text);
 void sm_songchanged(void);
 void sm_edited(void);
+void sm_newsong(void);
+void sm_opensong(const char *path);
 int sm_subtune(void);
 int sm_subtunes(void);
 const char *sm_toutf8(const char *latin1);
@@ -40,6 +42,15 @@ void roll_noteon(unsigned id, int note);
 void roll_noteoff(unsigned id);
 void roll_releaseall(void);
 void roll_setinstrument(int instrnum);
+
+// smexport.c
+void export_audio(void);
+void export_c64(int format);
+
+// smstart.c: the welcome dialog, the starter song and "Learn the SID"
+void start_welcome(void);
+void start_newfromtemplate(void);
+void start_learn(void);
 
 // smsound.c: the instruments sidebar
 GtkWidget *sound_new(void);
