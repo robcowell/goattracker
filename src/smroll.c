@@ -908,6 +908,12 @@ static void oneffect(GObject *drop, GParamSpec *pspec, gpointer data)
   commit();
 }
 
+// The step cursor is drawn brighter while step entry is on
+static void onsteptoggled(GtkToggleButton *button, gpointer data)
+{
+  if (grid) gtk_widget_queue_draw(grid);
+}
+
 static void onoctave(GtkSpinButton *spin, gpointer data)
 {
   epoctave = (int)gtk_spin_button_get_value(spin);
@@ -932,6 +938,12 @@ static void onrows(GtkSpinButton *spin, gpointer data)
   arrange_refresh();
   setsize();
   gtk_widget_queue_draw(grid);
+}
+
+// A note is sounding from the roll (a preview or a played note)
+int roll_busy(void)
+{
+  return (previewing >= 0) || (nheld > 0);
 }
 
 void roll_tick(void)
@@ -967,7 +979,7 @@ GtkWidget *roll_new(void)
   gtk_button_set_icon_name(GTK_BUTTON(stepbutton), "media-record-symbolic");
   gtk_widget_set_tooltip_text(GTK_WIDGET(stepbutton), "Step entry: notes you play on the keyboard or a MIDI "
     "controller are written at the blue cursor, which then moves on by the note length");
-  g_signal_connect_swapped(stepbutton, "toggled", G_CALLBACK(gtk_widget_queue_draw), grid);
+  g_signal_connect(stepbutton, "toggled", G_CALLBACK(onsteptoggled), NULL);
   gtk_box_append(GTK_BOX(bar), GTK_WIDGET(stepbutton));
   gtk_box_append(GTK_BOX(bar), gtk_label_new("Octave"));
   octavespin = GTK_SPIN_BUTTON(gtk_spin_button_new_with_range(0, 6, 1));

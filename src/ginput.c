@@ -69,6 +69,15 @@ void jam_noteoff(unsigned id)
   }
 }
 
+int jam_active(void)
+{
+  int c;
+
+  for (c = 0; c < MAX_CHN; c++)
+    if (voices[c].id) return 1;
+  return 0;
+}
+
 void jam_releaseall(void)
 {
   int c;

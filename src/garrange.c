@@ -45,9 +45,11 @@ int arr_read(int subtune, int chnum, CLIP *clips, int max)
       clip->rep = r;
       // The restart position normally points at the start of an entry
       // (its transpose or repeat byte), or into it
+      clip->loopofs = 0;
       if ((!looped) && (!r) && (restart <= pos) && (restart >= group))
       {
         clip->flags |= CLIP_LOOPSTART;
+        clip->loopofs = restart - group;
         looped = 1;
       }
     }
@@ -59,13 +61,13 @@ int arr_read(int subtune, int chnum, CLIP *clips, int max)
 int arr_write(int subtune, int chnum, const CLIP *clips, int n)
 {
   unsigned char buf[MAX_SONGLEN + 2];
-  int len = 0, restart = 0, trans = 0, i = 0;
+  int len = 0, restart = -1, trans = 0, i = 0;
 
   if (n <= 0) return 0;
   while (i < n)
   {
     const CLIP *clip = &clips[i];
-    int passes = 1, loopstart = clip->flags & CLIP_LOOPSTART;
+    int passes = 1, loopstart = clip->flags & CLIP_LOOPSTART, group = len;
 
     // Passes of a repeated pattern that are still together stay one
     // orderlist entry
@@ -75,7 +77,6 @@ int arr_write(int subtune, int chnum, const CLIP *clips, int n)
       (!(clips[i + passes].flags & (CLIP_LOOPSTART | CLIP_TRANSBYTE))))
       passes++;
 
-    if (loopstart) restart = len;
     // After looping, the transpose is whatever the last clip left, so the
     // loop start needs its own if that is different
     if ((clip->trans != trans) || ((loopstart) && (clips[n - 1].trans != clip->trans)) ||
@@ -92,8 +93,12 @@ int arr_write(int subtune, int chnum, const CLIP *clips, int n)
     }
     if (len >= MAX_SONGLEN) return 0;
     buf[len++] = clip->patt;
+    // Into the entry no further than its pattern number
+    if (loopstart) restart = group + (clip->loopofs < len - 1 - group ? clip->loopofs : len - 1 - group);
     i += passes;
   }
+  // No loop start: the restart position is past the end, so the song stops
+  if (restart < 0) restart = len;
 
   memset(songorder[subtune][chnum], 0, MAX_SONGLEN + 2);
   memcpy(songorder[subtune][chnum], buf, len);
@@ -155,16 +160,28 @@ int arr_copypattern(int src)
   return p;
 }
 
-int arr_newpattern(int rows)
+static void emptypattern(int p, int rows)
 {
-  int p = arr_freepattern(), c;
+  int c;
 
-  if (p < 0) return -1;
-  if (rows < 1) rows = 1;
-  if (rows > MAX_PATTROWS) rows = MAX_PATTROWS;
   memset(pattern[p], 0, sizeof pattern[p]);
   for (c = 0; c < rows; c++) pattern[p][c * 4] = REST;
   for (c = rows; c <= MAX_PATTROWS; c++) pattern[p][c * 4] = ENDPATT;
   pattlen[p] = rows;
+}
+
+void arr_discardpattern(int patt)
+{
+  if ((patt >= 0) && (patt < MAX_PATT)) emptypattern(patt, pattlen[patt] > 0 ? pattlen[patt] : 1);
+}
+
+int arr_newpattern(int rows)
+{
+  int p = arr_freepattern();
+
+  if (p < 0) return -1;
+  if (rows < 1) rows = 1;
+  if (rows > MAX_PATTROWS) rows = MAX_PATTROWS;
+  emptypattern(p, rows);
   return p;
 }

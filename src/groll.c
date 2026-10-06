@@ -108,23 +108,31 @@ void roll_write(int patt, ROLL *roll)
 
 int roll_instrument(const ROLL *roll, int index)
 {
-  int row = roll->notes[index].start, i = index;
+  int start = roll->notes[index].start, best = -1, instrnum = 0, i, row;
 
-  // Instruments set on the note rows and on the other rows, whichever is
-  // latest at or before this note
-  for (; row >= 0; row--)
+  // The latest instrument set at or before the note: on a note row, a
+  // key-off row or another row. The notes needn't be sorted (they aren't
+  // while one is being dragged).
+  if (roll->notes[index].instr) return roll->notes[index].instr;
+  for (i = 0; i < roll->nnotes; i++)
   {
-    if ((i >= 0) && (roll->notes[i].start == row))
+    const ROLLNOTE *n = &roll->notes[i];
+    int off = n->start + n->len;
+
+    if ((i != index) && (n->instr) && (n->start <= start) && (n->start > best))
     {
-      if (roll->notes[i].instr) return roll->notes[i].instr;
-      i--;
-      continue;
+      best = n->start;
+      instrnum = n->instr;
     }
-    if ((roll->hasother[row]) && (roll->other[row][1])) return roll->other[row][1];
-    if ((i >= 0) && (roll->notes[i].keyoff) && (roll->notes[i].start + roll->notes[i].len == row) &&
-      (roll->notes[i].offinstr)) return roll->notes[i].offinstr;
+    if ((n->keyoff) && (n->offinstr) && (off <= start) && (off > best))
+    {
+      best = off;
+      instrnum = n->offinstr;
+    }
   }
-  return 0;
+  for (row = start; row > best; row--)
+    if ((roll->hasother[row]) && (roll->other[row][1])) return roll->other[row][1];
+  return instrnum;
 }
 
 void roll_setlength(int patt, int rows)

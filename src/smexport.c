@@ -4,8 +4,8 @@
 // As audio (WAV, or MP3 when libmp3lame is installed), rendered offline
 // through the editor's playroutine (grender.c) in idle-callback chunks, then
 // faded and normalised (gaudio.c). Or as C64 files through the packer
-// (greloc.c): a .sid for SID players and emulators, or a .prg with the
-// player at $1000 for use in C64 programs.
+// (greloc.c): a .sid for SID players and emulators, or a .prg for use in
+// C64 programs, with the player where GoatTracker's packer settings put it.
 //
 
 #include "sm.h"
@@ -21,7 +21,8 @@ typedef struct
   GArray *samples;
   int cancelled;
   int savedmute[MAX_CHN];
-  AdwDialog *progress;
+  AdwDialog *progress;      // held until the job ends
+  int progressclosed;       // Cancel closes the dialog itself
   GtkWidget *bar;
 } AUDIOJOB;
 
@@ -97,7 +98,9 @@ static void endjob(AUDIOJOB *j)
 
   render_end();
   for (c = 0; c < MAX_CHN; c++) chn[c].mute = j->savedmute[c];
-  adw_dialog_force_close(j->progress);
+  if (!j->progressclosed) adw_dialog_force_close(j->progress);
+  g_signal_handlers_disconnect_by_data(j->progress, j);
+  g_object_unref(j->progress);
   g_array_unref(j->samples);
   g_free(j->path);
   g_free(j);
@@ -142,6 +145,11 @@ static gboolean renderchunk(gpointer data)
   return G_SOURCE_REMOVE;
 }
 
+static void onprogressclosed(AdwDialog *dialog, gpointer data)
+{
+  ((AUDIOJOB *)data)->progressclosed = 1;
+}
+
 static void oncancel(AdwAlertDialog *dialog, const char *response, gpointer data)
 {
   if (job) job->cancelled = 1;
@@ -175,6 +183,8 @@ static void onaudiochosen(GObject *source, GAsyncResult *result, gpointer data)
     chn[c].mute = 0;
   }
   j->progress = adw_alert_dialog_new(j->mp3 ? "Exporting MP3" : "Exporting WAV", NULL);
+  g_object_ref_sink(j->progress);
+  g_signal_connect(j->progress, "closed", G_CALLBACK(onprogressclosed), j);
   j->bar = gtk_progress_bar_new();
   adw_alert_dialog_set_extra_child(ADW_ALERT_DIALOG(j->progress), j->bar);
   adw_alert_dialog_add_response(ADW_ALERT_DIALOG(j->progress), "cancel", "_Cancel");
@@ -284,9 +294,12 @@ static void onpackchosen(GObject *source, GAsyncResult *result, gpointer data)
   if (relocsuccess)
   {
     char message[MAX_PATHNAME + 96];
-    snprintf(message, sizeof message, packformat == FORMAT_SID ?
-      "Exported %s: play it in a SID player or C64 emulator" :
-      "Exported %s: the player is at $1000 (call $1000 to start, $1003 every frame)", name);
+    // The player address is GoatTracker's packer setting
+    if (packformat == FORMAT_SID)
+      snprintf(message, sizeof message, "Exported %s: play it in a SID player or C64 emulator", name);
+    else
+      snprintf(message, sizeof message, "Exported %s: the player is at $%04X (call $%04X to start, $%04X every frame)",
+        name, playeradr, playeradr, playeradr + 3);
     sm_toast(message);
   }
   else
