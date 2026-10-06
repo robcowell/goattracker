@@ -22,5 +22,6 @@ void shrinkpattern(void);
 void expandpattern(void);
 void splitpattern(void);
 void joinpattern(void);
+int autoportamento(void);
 
 #endif

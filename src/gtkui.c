@@ -41,6 +41,7 @@ static int quitting = 0;
 // Settings of this editor, kept apart from goattrk2.cfg so that file stays
 // in the stock format
 int settings_backupinterval = 30;
+int settings_decodetables = 1;
 static guint backuptimer = 0;
 
 //
@@ -200,9 +201,103 @@ static int orderlistcursor(void)
   return 0;
 }
 
+//
+// Going back after a jump to related data
+//
+
+typedef struct
+{
+  int mode;
+  int chn, patt, pos, column;     // pattern editor
+  int subtune, ochn, opos;        // orderlist
+  int instr, ipos;                // instrument
+  int table, tpos, tcolumn;       // tables
+} PLACE;
+
+#define MAX_PLACES 32
+
+static PLACE places[MAX_PLACES];
+static int numplaces = 0;
+
+static void syncbackaction(void)
+{
+  g_simple_action_set_enabled(G_SIMPLE_ACTION(g_action_map_lookup_action(G_ACTION_MAP(app), "back")), numplaces > 0);
+}
+
+static void getplace(PLACE *p)
+{
+  p->mode = editmode;
+  p->chn = epchn;
+  p->patt = epnum[epchn];
+  p->pos = eppos;
+  p->column = epcolumn;
+  p->subtune = esnum;
+  p->ochn = eschn;
+  p->opos = eseditpos;
+  p->instr = einum;
+  p->ipos = eipos;
+  p->table = etnum;
+  p->tpos = etpos;
+  p->tcolumn = etcolumn;
+}
+
+static void pushplace(const PLACE *p)
+{
+  if (numplaces == MAX_PLACES)
+  {
+    memmove(&places[0], &places[1], (MAX_PLACES - 1) * sizeof(PLACE));
+    numplaces--;
+  }
+  places[numplaces++] = *p;
+  syncbackaction();
+}
+
+void ui_pushplace(void)
+{
+  PLACE p;
+
+  getplace(&p);
+  pushplace(&p);
+}
+
+void ui_goback(void)
+{
+  PLACE *p;
+
+  if (!numplaces)
+  {
+    ui_toast("Nothing to go back to");
+    return;
+  }
+  p = &places[--numplaces];
+  // The song may have changed since; keep everything in range
+  if (p->subtune != esnum)
+  {
+    esnum = p->subtune;
+    songchange();
+  }
+  epchn = p->chn;
+  if (!isplaying()) epnum[epchn] = p->patt;
+  eppos = MIN(p->pos, pattlen[epnum[epchn]]);
+  epcolumn = p->column;
+  eschn = p->ochn;
+  eseditpos = MIN(p->opos, songlen[esnum][eschn] + 1);
+  einum = p->instr;
+  eipos = p->ipos;
+  etnum = p->table;
+  etpos = p->tpos;
+  etcolumn = p->tcolumn;
+  editmode = p->mode;
+  syncbackaction();
+  grid_followcursor();
+  ui_focuseditmode();
+  ui_refresh();
+}
+
 static void runkey(unsigned raw, unsigned ascii, int shift, int allowhex)
 {
   int oldmode = editmode;
+  PLACE from;
 
   key = ascii;
   rawkey = raw;
@@ -216,10 +311,14 @@ static void runkey(unsigned raw, unsigned ascii, int shift, int allowhex)
   converthex();
   if (!allowhex) hexnybble = -1;
 
+  getplace(&from);
   undo_markcursor();
   if ((editmode != EDIT_ORDERLIST) || (!orderlistcursor()))
     docommand();
   undo_checkpoint(0);
+
+  // ENTER jumps from a reference to what it refers to: remember the way back
+  if ((rawkey == KEY_ENTER) && (editmode != oldmode)) pushplace(&from);
 
   if (editmode != oldmode) ui_focuseditmode();
   ui_refresh();
@@ -258,6 +357,13 @@ static gboolean onkeypressed(GtkEventControllerKey *controller, guint keyval, gu
 
   // Keyboard movement brings the views back to the cursor
   grid_followcursor();
+
+  // Alt+Left returns from a jump to table or instrument data
+  if ((keyval == GDK_KEY_Left) && ((state & (GDK_ALT_MASK | GDK_CONTROL_MASK | GDK_SHIFT_MASK)) == GDK_ALT_MASK))
+  {
+    ui_goback();
+    return TRUE;
+  }
 
   // Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y undo and redo everywhere, text fields
   // included (their own undo is off). Shift+Z still cycles auto-advance.
@@ -421,6 +527,7 @@ static void syncundoactions(void)
 {
   g_simple_action_set_enabled(G_SIMPLE_ACTION(g_action_map_lookup_action(G_ACTION_MAP(app), "undo")), undo_canundo());
   g_simple_action_set_enabled(G_SIMPLE_ACTION(g_action_map_lookup_action(G_ACTION_MAP(app), "redo")), undo_canredo());
+  syncbackaction();
 }
 
 // Called after a native widget changed the song: record it and show it
@@ -602,6 +709,7 @@ static void onsimpleaction(GSimpleAction *action, GVariant *parameter, gpointer 
   else if (!strcmp(name, "save")) ui_quicksave();
   else if (!strcmp(name, "saveas")) ui_savesong();
   else if (!strcmp(name, "prefs")) ui_preferences();
+  else if (!strcmp(name, "back")) ui_goback();
   else if (!strcmp(name, "exportagain")) ui_exportagain();
   else if (!strcmp(name, "wav")) ui_wavexport();
   else if (!strcmp(name, "loadinstr")) ui_loadinstrument();
@@ -634,6 +742,16 @@ static void ontoggleaction(GSimpleAction *action, GVariant *parameter, gpointer 
   if (on) patterndispmode |= bit;
   else patterndispmode &= ~bit;
   grid_redraw();
+}
+
+static void savesettings(void);
+
+static void ondecodetables(GSimpleAction *action, GVariant *parameter, gpointer data)
+{
+  settings_decodetables = !settings_decodetables;
+  g_simple_action_set_state(action, g_variant_new_boolean(settings_decodetables));
+  grid_relayout();
+  savesettings();
 }
 
 static void onabout(GSimpleAction *action, GVariant *parameter, gpointer data)
@@ -708,6 +826,7 @@ static GMenuModel *buildmenu(void)
   static const MENUITEM edit[] = {
     {"Undo", "app.undo", "<Control>z"},
     {"Redo", "app.redo", "<Control><Shift>z"},
+    {"Go Back", "app.back", "<Alt>Left"},
     {NULL}
   };
   static const MENUITEM file[] = {
@@ -739,6 +858,7 @@ static GMenuModel *buildmenu(void)
     {"Smaller Text", "app.zoomout", NULL},
     {"Hexadecimal Row Numbers", "app.hexrows", NULL},
     {"Dots for Empty Fields", "app.dots", NULL},
+    {"Describe Table Rows", "app.decodetables", NULL},
     {"Fullscreen", "app.fullscreen", "<Alt>Return"},
     {NULL}
   };
@@ -762,7 +882,7 @@ static GMenuModel *buildmenu(void)
 
 static void addactions(void)
 {
-  static const char *simple[] = {"undo", "redo", "new", "open", "merge", "save", "saveas", "prefs", "exportagain", "wav", "loadinstr", "saveinstr", "export",
+  static const char *simple[] = {"undo", "redo", "back", "new", "open", "merge", "save", "saveas", "prefs", "exportagain", "wav", "loadinstr", "saveinstr", "export",
     "help", "quit", "mute", "fullscreen", "zoomin", "zoomout", NULL};
   static const struct { const char *name; int mode; } plays[] = {
     {"play", PLAY_BEGINNING}, {"playpos", PLAY_POS}, {"playpattern", PLAY_PATTERN}};
@@ -799,6 +919,10 @@ static void addactions(void)
   g_object_unref(action);
   action = g_simple_action_new_stateful("dots", NULL, g_variant_new_boolean(patterndispmode & 2));
   g_signal_connect(action, "activate", G_CALLBACK(ontoggleaction), GINT_TO_POINTER(2));
+  g_action_map_add_action(G_ACTION_MAP(app), G_ACTION(action));
+  g_object_unref(action);
+  action = g_simple_action_new_stateful("decodetables", NULL, g_variant_new_boolean(settings_decodetables));
+  g_signal_connect(action, "activate", G_CALLBACK(ondecodetables), NULL);
   g_action_map_add_action(G_ACTION_MAP(app), G_ACTION(action));
   g_object_unref(action);
 }
@@ -874,6 +998,8 @@ static GtkWidget *buildheaderbar(void)
     gtk_box_append(GTK_BOX(undobox), actionbutton("edit-undo-symbolic", "app.undo", "Undo (Ctrl+Z)"));
     gtk_box_append(GTK_BOX(undobox), actionbutton("edit-redo-symbolic", "app.redo", "Redo (Ctrl+Shift+Z)"));
     adw_header_bar_pack_start(ADW_HEADER_BAR(header), undobox);
+    adw_header_bar_pack_start(ADW_HEADER_BAR(header), actionbutton("go-previous-symbolic", "app.back",
+      "Go back after jumping to table or instrument data (Alt+Left)"));
   }
 
   windowtitle = adw_window_title_new("GoatTracker", "Untitled");
@@ -1023,6 +1149,9 @@ static void loadsettings(void)
     int v = g_key_file_get_integer(keys, "editor", "backup-interval", &error);
     if (!error) settings_backupinterval = CLAMP(v, 0, 3600);
     g_clear_error(&error);
+    v = g_key_file_get_boolean(keys, "view", "describe-tables", &error);
+    if (!error) settings_decodetables = v;
+    g_clear_error(&error);
   }
   g_key_file_unref(keys);
   g_free(path);
@@ -1036,6 +1165,7 @@ static void savesettings(void)
 
   g_key_file_load_from_file(keys, path, G_KEY_FILE_KEEP_COMMENTS, NULL);
   g_key_file_set_integer(keys, "editor", "backup-interval", settings_backupinterval);
+  g_key_file_set_boolean(keys, "view", "describe-tables", settings_decodetables);
   g_mkdir_with_parents(dir, 0755);
   g_key_file_save_to_file(keys, path, NULL);
   g_key_file_unref(keys);

@@ -36,6 +36,7 @@ static char *genkeys[] = {
   "CTRL+S Save the song (asks for a name the first time)",
   "SHIFT+F11 Export the song as a WAV file",
   "CTRL+F9 Pack and export again with the last settings",
+  "ALT+LEFT Go back after RETURN jumped to table or instrument data",
   "CTRL+, Preferences",
   "CTRL+Z Undo",
   "CTRL+SHIFT+Z, CTRL+Y Redo",
@@ -65,6 +66,7 @@ static char *patternkeys[] = {
   "SHIFT+O,P Shrink/expand pattern",
   "SHIFT+X,C,V Cut,copy,paste pattern",
   "SHIFT+Z Cycle autoadvance-mode (CTRL+Z is undo)",
+  "SHIFT+Y Portamento from this note to the next one",
   "SHIFT+1,2,3 Mute channel",
   NULL
 };
