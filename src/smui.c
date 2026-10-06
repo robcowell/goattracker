@@ -155,6 +155,7 @@ void sm_songchanged(void)
   gtk_spin_button_set_value(tunespin, subtune + 1);
   gtk_widget_set_visible(gtk_widget_get_parent(GTK_WIDGET(tunespin)), sm_subtunes() > 1);
   updatetitle();
+  roll_refreshinstruments();
   arrange_songchanged();
   sm_setstatus("Click a clip to select it, drag it to move it (hold Ctrl to copy), right-click for more.");
   measuresong();
@@ -174,6 +175,7 @@ static void undoredo(int redo)
 {
   if (!(redo ? undo_redo() : undo_undo())) return;
   arrange_refresh();
+  roll_refresh();
   updatetitle();
   measuresong();
 }
@@ -414,6 +416,7 @@ static gboolean tick(gpointer data)
   int playing = isplaying();
 
   arrange_tick();
+  roll_tick();
   if (playing || wasplaying) updatetime();
   if (playing != wasplaying) updateplaybutton();
   if ((!playing) && (lengthstale)) measuresong();
@@ -512,7 +515,7 @@ static void onactivate(GtkApplication *application, gpointer data)
   int i;
 
   sm_window = GTK_WINDOW(adw_application_window_new(application));
-  gtk_window_set_default_size(sm_window, 1100, 560);
+  gtk_window_set_default_size(sm_window, 1100, 760);
   g_signal_connect(sm_window, "close-request", G_CALLBACK(oncloserequest), NULL);
   g_action_map_add_action_entries(G_ACTION_MAP(sm_window), winactions, G_N_ELEMENTS(winactions), NULL);
   for (i = 0; i < (int)G_N_ELEMENTS(accels); i++)
@@ -560,10 +563,7 @@ static void onactivate(GtkApplication *application, gpointer data)
   content = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
   gtk_box_append(GTK_BOX(content), arrange_new());
   gtk_box_append(GTK_BOX(content), gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
-  // The piano roll for the selected clip goes here (phase 3)
-  label = gtk_label_new(NULL);
-  gtk_widget_set_vexpand(label, TRUE);
-  gtk_box_append(GTK_BOX(content), label);
+  gtk_box_append(GTK_BOX(content), roll_new());
 
   toasts = ADW_TOAST_OVERLAY(adw_toast_overlay_new());
   adw_toast_overlay_set_child(toasts, content);

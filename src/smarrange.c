@@ -9,7 +9,6 @@
 //
 
 #include "sm.h"
-#include "garrange.h"
 
 #define RULERH 24
 #define LANEH 76
@@ -41,7 +40,7 @@ static GtkWidget *timeline, *headers, *menu;
 static GtkScrolledWindow *scroller;
 static GSimpleActionGroup *actions;
 
-static const double palette[][3] = {
+const double sm_palette[8][3] = {
   {0.55, 0.75, 0.98}, {0.56, 0.86, 0.62}, {0.98, 0.78, 0.45}, {0.93, 0.56, 0.60},
   {0.76, 0.64, 0.95}, {0.48, 0.86, 0.86}, {0.95, 0.66, 0.85}, {0.80, 0.84, 0.52}};
 
@@ -120,6 +119,7 @@ void arrange_songchanged(void)
   int c;
 
   selchn = selclip = -1;
+  roll_show(-1, -1, 0);
   for (c = 0; c < MAX_CHN; c++)
   {
     playclip[c] = -1;
@@ -206,7 +206,7 @@ static void roundrect(cairo_t *cr, double x, double y, double w, double h)
 static void drawclip(cairo_t *cr, PangoLayout *pl, const CLIP *clip, double x, double y, double w, double h,
   double alpha, int font)
 {
-  const double *col = palette[clip->patt % 8];
+  const double *col = sm_palette[clip->patt % 8];
   char buf[32];
 
   if (w < 1) w = 1;
@@ -412,6 +412,8 @@ static void select_(int c, int i)
 {
   selchn = (i >= 0) ? c : -1;
   selclip = i;
+  if (i >= 0) roll_show(c, clips[c][i].patt, clips[c][i].trans);
+  else roll_show(-1, -1, 0);
   describeclip();
   updateactions();
   gtk_widget_queue_draw(timeline);
@@ -1023,6 +1025,9 @@ GtkWidget *arrange_new(void)
   scroller = GTK_SCROLLED_WINDOW(gtk_scrolled_window_new());
   gtk_scrolled_window_set_policy(scroller, GTK_POLICY_AUTOMATIC, GTK_POLICY_NEVER);
   gtk_scrolled_window_set_child(scroller, timeline);
+  // Focusing the area for its keys must not scroll the view (and move it
+  // under a drag)
+  gtk_viewport_set_scroll_to_focus(GTK_VIEWPORT(gtk_scrolled_window_get_child(scroller)), FALSE);
   gtk_widget_set_hexpand(GTK_WIDGET(scroller), TRUE);
   gtk_box_append(GTK_BOX(box), GTK_WIDGET(scroller));
 
