@@ -16,6 +16,7 @@ extern GtkWindow *sm_window;
 void sm_toast(const char *message);
 void sm_setstatus(const char *text);
 void sm_songchanged(void);
+void sm_edited(void);
 int sm_subtune(void);
 int sm_subtunes(void);
 const char *sm_toutf8(const char *latin1);
@@ -23,6 +24,7 @@ const char *sm_toutf8(const char *latin1);
 // smarrange.c: the voice lanes, one clip per orderlist pattern
 GtkWidget *arrange_new(void);
 void arrange_songchanged(void);
+void arrange_refresh(void);
 void arrange_tick(void);
 
 #endif
