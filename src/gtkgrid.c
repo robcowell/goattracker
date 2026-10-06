@@ -440,6 +440,16 @@ static void drawtables(GtkDrawingArea *area, cairo_t *cr, int width, int height,
     if (etpos - etview[etnum] >= rows) etview[etnum] = etpos - rows + 1;
     if (etpos < etview[etnum]) etview[etnum] = etpos;
     tablefollow = 0;
+
+    // ...and bring the edited table into view when the tables scroll sideways
+    {
+      GtkWidget *scroll = gtk_widget_get_ancestor(GTK_WIDGET(area), GTK_TYPE_SCROLLED_WINDOW);
+      if ((scroll) && (editmode == EDIT_TABLES))
+      {
+        GtkAdjustment *adj = gtk_scrolled_window_get_hadjustment(GTK_SCROLLED_WINDOW(scroll));
+        gtk_adjustment_clamp_page(adj, tblstart(etnum) * cellw, (tblstart(etnum) + tblwidth(etnum) + 1) * cellw);
+      }
+    }
   }
 
   fill(cr, 0, 0, width, height, col_bg);

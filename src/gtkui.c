@@ -1427,7 +1427,19 @@ static void onactivate(GtkApplication *application, gpointer data)
   gtk_paned_set_shrink_end_child(GTK_PANED(top), FALSE);
 
   // Tables and song information below them
-  gtk_box_append(GTK_BOX(bottom), framed(tablegrid));
+  {
+    // The tables scroll sideways when the window is too narrow for them
+    // (with row descriptions they are wider than everything else)
+    GtkWidget *scroll = gtk_scrolled_window_new();
+    GtkWidget *frame;
+
+    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scroll), GTK_POLICY_AUTOMATIC, GTK_POLICY_NEVER);
+    gtk_scrolled_window_set_propagate_natural_width(GTK_SCROLLED_WINDOW(scroll), TRUE);
+    gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scroll), tablegrid);
+    frame = framed(scroll);
+    gtk_widget_set_hexpand(frame, TRUE);
+    gtk_box_append(GTK_BOX(bottom), frame);
+  }
   gtk_box_append(GTK_BOX(bottom), songpanel);
   gtk_widget_set_margin_start(bottom, 6);
   gtk_widget_set_margin_bottom(bottom, 6);
