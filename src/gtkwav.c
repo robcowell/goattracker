@@ -24,7 +24,8 @@ typedef struct
   double gain;              // normalisation gain, taken from the full mix
   int cancelled;
   int savedmute[MAX_CHN];
-  AdwDialog *progress;
+  AdwDialog *progress;      // held until the job ends
+  int progressclosed;       // Cancel closes the dialog itself
   GtkWidget *bar;
   GtkWidget *label;
 } WAVJOB;
@@ -91,7 +92,9 @@ static void endjob(WAVJOB *j)
 
   render_end();
   for (c = 0; c < MAX_CHN; c++) chn[c].mute = j->savedmute[c];
-  adw_dialog_force_close(j->progress);
+  if (!j->progressclosed) adw_dialog_force_close(j->progress);
+  g_signal_handlers_disconnect_by_data(j->progress, j);
+  g_object_unref(j->progress);
 
   if (j->cancelled == 2) ui_toast("The WAV file could not be written");
   else if (!j->cancelled)
@@ -150,6 +153,11 @@ static gboolean renderchunk(gpointer data)
   return G_SOURCE_CONTINUE;
 }
 
+static void onprogressclosed(AdwDialog *dialog, gpointer data)
+{
+  ((WAVJOB *)data)->progressclosed = 1;
+}
+
 static void oncancelrender(AdwAlertDialog *dialog, const char *response, gpointer data)
 {
   if (job) job->cancelled = 1;
@@ -183,6 +191,8 @@ static void onwavchosen(const char *path, gpointer data)
   for (c = 0; c < MAX_CHN; c++) j->savedmute[c] = chn[c].mute;
 
   j->progress = adw_alert_dialog_new("Exporting WAV", NULL);
+  g_object_ref_sink(j->progress);
+  g_signal_connect(j->progress, "closed", G_CALLBACK(onprogressclosed), j);
   box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
   j->label = gtk_label_new("");
   j->bar = gtk_progress_bar_new();

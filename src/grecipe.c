@@ -26,9 +26,19 @@ typedef struct
   PROGROW row[MAXPROG];
 } PROGRAM;
 
-static RECIPE recipes[MAX_INSTR];
-static unsigned char hasrecipe[MAX_INSTR];
-static unsigned recipehash[MAX_INSTR];
+// What each instrument was built from, with checksums of what was built.
+// Several builds are remembered, newest last, so that after an undo or
+// redo the instrument still finds the recipe it matches.
+#define HISTORY 64
+
+typedef struct
+{
+  RECIPE recipe;
+  unsigned hash;
+} BUILT;
+
+static BUILT history[MAX_INSTR][HISTORY];
+static int nhistory[MAX_INSTR];
 
 //
 // Presets
@@ -192,21 +202,37 @@ static void pulsetable(const RECIPE *rc, PROGRAM *p)
   addjump(p, 1);
 }
 
-// Voices that play an instrument: those whose patterns set it
-int recipe_usedvoices(int instrnum)
+// Voices that play each instrument: those whose patterns set it. One pass
+// over the song for all instruments.
+void recipe_voicemasks(int masks[MAX_INSTR])
 {
-  int s, c, i, row, mask = 0;
+  static unsigned char seen[MAX_CHN][MAX_PATT];
+  int s, c, i, row;
 
+  memset(masks, 0, MAX_INSTR * sizeof masks[0]);
+  memset(seen, 0, sizeof seen);
   for (s = 0; s < MAX_SONGS; s++)
     for (c = 0; c < MAX_CHN; c++)
       for (i = 0; i < songlen[s][c]; i++)
       {
         int patt = songorder[s][c][i];
-        if (patt >= MAX_PATT) continue;
+        if ((patt >= MAX_PATT) || (seen[c][patt])) continue;
+        seen[c][patt] = 1;
         for (row = 0; row < pattlen[patt]; row++)
-          if (pattern[patt][row * 4 + 1] == instrnum) mask |= 1 << c;
+        {
+          int in = pattern[patt][row * 4 + 1];
+          if ((in) && (in < MAX_INSTR)) masks[in] |= 1 << c;
+        }
       }
-  return mask;
+}
+
+int recipe_usedvoices(int instrnum)
+{
+  int masks[MAX_INSTR];
+
+  if ((instrnum < 1) || (instrnum >= MAX_INSTR)) return 0;
+  recipe_voicemasks(masks);
+  return masks[instrnum];
 }
 
 static int usedvoices(int instrnum)
@@ -350,25 +376,56 @@ static unsigned hashinstrument(int instrnum)
   return h;
 }
 
+static void remember(int instrnum, const RECIPE *recipe, unsigned hash)
+{
+  BUILT *h = history[instrnum];
+  int n = nhistory[instrnum], i;
+
+  // The same build again (a slider dragged back) moves to the end
+  for (i = 0; i < n; i++)
+    if (h[i].hash == hash) break;
+  if (i < n)
+  {
+    memmove(&h[i], &h[i + 1], (n - i - 1) * sizeof(BUILT));
+    n--;
+  }
+  if (n == HISTORY)
+  {
+    memmove(&h[0], &h[1], (HISTORY - 1) * sizeof(BUILT));
+    n--;
+  }
+  h[n].recipe = *recipe;
+  h[n].hash = hash;
+  nhistory[instrnum] = n + 1;
+}
+
+// The build the instrument matches now, newest first
+static const BUILT *current(int instrnum)
+{
+  unsigned hash;
+  int i;
+
+  if ((instrnum < 1) || (instrnum >= MAX_INSTR) || (!nhistory[instrnum])) return NULL;
+  hash = hashinstrument(instrnum);
+  for (i = nhistory[instrnum] - 1; i >= 0; i--)
+    if (history[instrnum][i].hash == hash) return &history[instrnum][i];
+  return NULL;
+}
+
 const RECIPE *recipe_get(int instrnum)
 {
-  if ((instrnum < 1) || (instrnum >= MAX_INSTR) || (!hasrecipe[instrnum])) return NULL;
-  if (recipehash[instrnum] != hashinstrument(instrnum))
-  {
-    hasrecipe[instrnum] = 0;
-    return NULL;
-  }
-  return &recipes[instrnum];
+  const BUILT *b = current(instrnum);
+  return b ? &b->recipe : NULL;
 }
 
 void recipe_forget(int instrnum)
 {
-  if ((instrnum >= 0) && (instrnum < MAX_INSTR)) hasrecipe[instrnum] = 0;
+  if ((instrnum >= 0) && (instrnum < MAX_INSTR)) nhistory[instrnum] = 0;
 }
 
 void recipe_forgetall(void)
 {
-  memset(hasrecipe, 0, sizeof hasrecipe);
+  memset(nhistory, 0, sizeof nhistory);
 }
 
 //
@@ -438,28 +495,30 @@ int recipe_build(int instrnum, const RECIPE *recipe, const char *name)
     for (i = 0; i < MAX_TABLELEN; i++)
       if ((mine[t][i]) && (!after[t][i])) ltable[t][i] = rtable[t][i] = 0;
 
-  recipes[instrnum] = rc;
-  hasrecipe[instrnum] = 1;
-  recipehash[instrnum] = hashinstrument(instrnum);
+  remember(instrnum, &rc, hashinstrument(instrnum));
   return 1;
 }
 
 int recipe_updatefilters(void)
 {
+  int masks[MAX_INSTR];
   int c, changed = 0;
 
+  recipe_voicemasks(masks);
   for (c = 1; c < MAX_INSTR; c++)
   {
-    const RECIPE *rc = recipe_get(c);
+    const BUILT *b = current(c);
+    RECIPE rc;
     int pos;
     unsigned char r;
 
-    if ((!rc) || (rc->filter == RF_OFF) || (!instr[c].ptr[FTBL])) continue;
+    if ((!b) || (b->recipe.filter == RF_OFF) || (!instr[c].ptr[FTBL])) continue;
+    rc = b->recipe;
     pos = instr[c].ptr[FTBL] - 1;
-    r = ((rc->resonance & 0x0f) << 4) | usedvoices(c);
+    r = ((rc.resonance & 0x0f) << 4) | (masks[c] ? masks[c] : 7);
     if (rtable[FTBL][pos] == r) continue;
     rtable[FTBL][pos] = r;
-    recipehash[c] = hashinstrument(c);
+    remember(c, &rc, hashinstrument(c));
     changed = 1;
   }
   return changed;
@@ -472,24 +531,22 @@ int recipe_updatefilters(void)
 
 void recipe_writechunk(FILE *handle)
 {
-  int c, n = 0;
+  int c, i, n = 0;
 
   for (c = 1; c < MAX_INSTR; c++)
-    if (recipe_get(c)) n++;
+    if (current(c)) n++;
   if (!n) return;
   fputc(CHUNK_RECIPES, handle);
   fputc(1, handle);
   fputc(n, handle);
   for (c = 1; c < MAX_INSTR; c++)
   {
-    if (!recipe_get(c)) continue;
+    const BUILT *b = current(c);
+    if (!b) continue;
     fputc(c, handle);
     fputc(sizeof(RECIPE), handle);
-    fwrite(&recipes[c], sizeof(RECIPE), 1, handle);
-    fputc(recipehash[c] & 0xff, handle);
-    fputc((recipehash[c] >> 8) & 0xff, handle);
-    fputc((recipehash[c] >> 16) & 0xff, handle);
-    fputc((recipehash[c] >> 24) & 0xff, handle);
+    fwrite(&b->recipe, sizeof(RECIPE), 1, handle);
+    for (i = 0; i < 4; i++) fputc((b->hash >> (i * 8)) & 0xff, handle);
   }
 }
 
@@ -520,8 +577,6 @@ void recipe_readchunk(FILE *handle)
       hash |= (unsigned)b << (i * 8);
     }
     if ((num < 1) || (num >= MAX_INSTR)) continue;
-    recipes[num] = rc;
-    recipehash[num] = hash;
-    hasrecipe[num] = 1;
+    remember(num, &rc, hash);
   }
 }
