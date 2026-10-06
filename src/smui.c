@@ -33,6 +33,7 @@ static void (*pending)(void);
 
 static void savesongas(void);
 static void savesettings(void);
+static void togglepause(void);
 
 // goattrk2.c's tracker key commands call these. SidMonkey never runs those
 // commands, but they are linked in with the engine's startup code.
@@ -244,6 +245,11 @@ static void undoredo(int redo)
   updatetitle();
   updatehealth();
   measuresong();
+}
+
+void sm_togglepause(void)
+{
+  togglepause();
 }
 
 static void togglepause(void)

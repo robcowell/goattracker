@@ -246,15 +246,22 @@ void roll_refreshinstruments(void)
   g_free(names);
 }
 
-static void scrolltonotes(void)
+// Centre the view on the clip's notes. The first time the roll is shown it
+// has no size yet, so this waits (a few frames at most) until it has.
+static int scrolltries;
+
+static gboolean scrolltonotes(gpointer data)
 {
   GtkAdjustment *v = gtk_scrolled_window_get_vadjustment(scroller);
   int i, sum = 0, mid = 36;
 
+  if ((gtk_adjustment_get_page_size(v) <= 0) || (gtk_adjustment_get_upper(v) <= gtk_adjustment_get_page_size(v)))
+    return ++scrolltries < 20 ? G_SOURCE_CONTINUE : G_SOURCE_REMOVE;
   for (i = 0; i < roll.nnotes; i++) sum += pitchof(roll.notes[i].note);
   if (roll.nnotes) mid = sum / roll.nnotes;
   gtk_adjustment_set_value(v, ypitch(mid) - gtk_adjustment_get_page_size(v) / 2);
   gtk_adjustment_set_value(gtk_scrolled_window_get_hadjustment(scroller), 0);
+  return G_SOURCE_REMOVE;
 }
 
 // The arrangement selected a clip (patt < 0: none)
@@ -282,7 +289,8 @@ void roll_show(int chnum, int patt, int trans)
   if (changed)
   {
     // After the layout, so the adjustment knows its range
-    g_idle_add_once((GSourceOnceFunc)scrolltonotes, NULL);
+    scrolltries = 0;
+    g_timeout_add(20, scrolltonotes, NULL);
   }
 }
 
@@ -788,6 +796,13 @@ static gboolean onkey(GtkEventControllerKey *controller, guint keyval, guint key
   }
   switch (keyval)
   {
+    // The window's Space shortcut doesn't reach past the roll's scrolled
+    // window, so the roll starts and stops playback itself
+    case GDK_KEY_space:
+    if (state & (GDK_CONTROL_MASK | GDK_ALT_MASK | GDK_SHIFT_MASK)) return FALSE;
+    sm_togglepause();
+    return TRUE;
+
     case GDK_KEY_Page_Up:
     case GDK_KEY_Page_Down:
     gtk_spin_button_set_value(octavespin, epoctave + (keyval == GDK_KEY_Page_Up ? 1 : -1));
@@ -948,7 +963,12 @@ int roll_busy(void)
 
 void roll_tick(void)
 {
-  if ((rollpatt >= 0) && (isplaying())) gtk_widget_queue_draw(grid);
+  static int wasplaying;
+  int playing = isplaying();
+
+  // Once more after playback stops, to take the playhead away
+  if ((rollpatt >= 0) && ((playing) || (wasplaying))) gtk_widget_queue_draw(grid);
+  wasplaying = playing;
 }
 
 GtkWidget *roll_new(void)
