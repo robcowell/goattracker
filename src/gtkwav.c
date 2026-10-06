@@ -8,6 +8,7 @@
 
 #include <string.h>
 #include "gtkui.h"
+#include "gaudio.h"
 
 typedef struct
 {
@@ -36,31 +37,6 @@ static int lastfade = 3;
 static int lastnormalise = 1;
 static int laststems = 0;
 
-static void writele16(FILE *f, unsigned v) { fputc(v & 0xff, f); fputc(v >> 8, f); }
-static void writele32(FILE *f, unsigned v) { writele16(f, v & 0xffff); writele16(f, v >> 16); }
-
-static int writewav(const char *path, const short *data, unsigned count, unsigned rate)
-{
-  FILE *f = fopen(path, "wb");
-  unsigned bytes = count * 2;
-
-  if (!f) return 0;
-  fwrite("RIFF", 4, 1, f);
-  writele32(f, 36 + bytes);
-  fwrite("WAVEfmt ", 8, 1, f);
-  writele32(f, 16);
-  writele16(f, 1);          // PCM
-  writele16(f, 1);          // mono
-  writele32(f, rate);
-  writele32(f, rate * 2);
-  writele16(f, 2);
-  writele16(f, 16);
-  fwrite("data", 4, 1, f);
-  writele32(f, bytes);
-  fwrite(data, 2, count, f);
-  return fclose(f) == 0;
-}
-
 static char *passpath(WAVJOB *j)
 {
   char *base, *dot;
@@ -80,33 +56,20 @@ static void finishpass(WAVJOB *j)
   short *data = (short *)j->samples->data;
   unsigned count = j->samples->len;
   unsigned rate = render_rate();
-  unsigned fadesamples = j->fadeseconds * rate;
-  unsigned c;
   char *path;
 
-  // Fade out over the last seconds
-  if (fadesamples > count) fadesamples = count;
-  for (c = 0; c < fadesamples; c++)
-  {
-    unsigned i = count - fadesamples + c;
-    data[i] = (short)(data[i] * (double)(fadesamples - c) / fadesamples);
-  }
+  audio_fade(data, count, rate, j->fadeseconds);
 
   // Scale the full mix's loudest sample to just below full scale, and the
   // stems by the same amount so that they keep their balance
   if (j->normalise)
   {
-    if (!j->pass)
-    {
-      int peak = 1;
-      for (c = 0; c < count; c++) if (abs(data[c]) > peak) peak = abs(data[c]);
-      j->gain = 32000.0 / peak;
-    }
-    for (c = 0; c < count; c++) data[c] = (short)CLAMP(data[c] * j->gain, -32768, 32767);
+    if (!j->pass) j->gain = audio_normalgain(data, count);
+    audio_gain(data, count, j->gain);
   }
 
   path = passpath(j);
-  if (!writewav(path, data, count, rate)) j->cancelled = 2;
+  if (!audio_writewav(path, data, count, rate)) j->cancelled = 2;
   g_free(path);
 }
 
