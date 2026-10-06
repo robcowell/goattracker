@@ -32,4 +32,9 @@ void host_stop(void);
 void host_preview(int note, int ins, int chnum);
 void host_release(int chnum);
 
+// Hold off the audio callback (and so the playroutine) while changing song
+// data it reads, such as an orderlist
+void host_lock(void);
+void host_unlock(void);
+
 #endif
