@@ -1,0 +1,13 @@
+# Text files use LF line endings; git detects the rest as binary
+* text=auto eol=lf
+
+# Always binary, whatever their contents look like
+*.png binary
+*.sng binary
+*.ins binary
+*.prg binary
+*.sid binary
+*.bin binary
+*.dat binary
+*.exe binary
+*.dll binary
