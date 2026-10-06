@@ -46,6 +46,8 @@ static void prerollsid(void)
   }
 }
 
+static int savedloopplay;
+
 int render_begin(int subtune, int loops, int maxseconds, int silent)
 {
   if (rendering) return 0;
@@ -63,6 +65,9 @@ int render_begin(int subtune, int loops, int maxseconds, int silent)
   samplesperframe = (double)rate / framerate;
   maxframes = (long)maxseconds * framerate;
 
+  // Render the song as it plays, not the editor's loop
+  savedloopplay = loopplay;
+  loopplay = 0;
   stopsong();
   playroutine();
   if (!silent)
@@ -130,6 +135,7 @@ void render_end(void)
   playroutine();
   resettime();
   if (!silentrender) resetsid();
+  loopplay = savedloopplay;
   rendering = 0;
   SDL_PauseAudio(0);
 }
@@ -145,4 +151,50 @@ double render_songlength(int subtune, int maxseconds)
   seconds = render_seconds();
   render_end();
   return ended ? seconds : -1;
+}
+
+int render_seek(int subtune, int chnum, int songpos, int maxseconds)
+{
+  int target = songpos;
+  int wasloop = loopplay;
+  int found = 0;
+  unsigned last;
+  long frame, limit;
+
+  if (rendering) return 0;
+  // A transpose or repeat entry belongs to the pattern after it
+  while ((target < songlen[subtune][chnum]) && (songorder[subtune][chnum][target] >= REPEAT)) target++;
+  if (target >= songlen[subtune][chnum]) return 0;
+
+  SDL_PauseAudio(1);
+  loopplay = 0;
+  if (!framerate) framerate = PALFRAMERATE;
+  limit = (long)maxseconds * framerate;
+  stopsong();
+  playroutine();
+  last = seqcount[chnum];
+  initsong(subtune, PLAY_BEGINNING);
+  // Run the playroutine silently until the channel starts that pattern
+  for (frame = 0; frame < limit; frame++)
+  {
+    playroutine();
+    if (!isplaying()) break;
+    if (seqcount[chnum] != last)
+    {
+      last = seqcount[chnum];
+      if (seqpos[chnum] == target)
+      {
+        found = 1;
+        break;
+      }
+    }
+  }
+  if (!found)
+  {
+    stopsong();
+    playroutine();
+  }
+  loopplay = wasloop;
+  SDL_PauseAudio(0);
+  return found;
 }

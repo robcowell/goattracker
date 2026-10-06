@@ -23,5 +23,6 @@ void expandpattern(void);
 void splitpattern(void);
 void joinpattern(void);
 int autoportamento(void);
+extern int autonextpattern;
 
 #endif

@@ -365,6 +365,15 @@ static gboolean onkeypressed(GtkEventControllerKey *controller, guint keyval, gu
     return TRUE;
   }
 
+  // Ctrl+Enter in the orderlist plays from that position (Shift+Enter keeps
+  // its classic meaning)
+  if ((editmode == EDIT_ORDERLIST) && (focus == ordergrid) && (raw == KEY_ENTER) &&
+    ((state & (GDK_CONTROL_MASK | GDK_SHIFT_MASK | GDK_ALT_MASK)) == GDK_CONTROL_MASK))
+  {
+    ui_playfromhere();
+    return TRUE;
+  }
+
   // Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y undo and redo everywhere, text fields
   // included (their own undo is off). Shift+Z still cycles auto-advance.
   if ((state & GDK_CONTROL_MASK) && ((raw == KEY_Z) || (raw == KEY_Y)))
@@ -495,6 +504,21 @@ static void updatestatus(void)
   }
 }
 
+static GtkWidget *volumescale;
+
+static void onvolumechanged(GtkRange *range, gpointer data)
+{
+  if (syncing) return;
+  mastervolume = (int)gtk_range_get_value(range);
+}
+
+void ui_setdetune(int cents)
+{
+  SDL_LockAudio();
+  sid_setdetune(cents);
+  SDL_UnlockAudio();
+}
+
 static void synctoolbar(void)
 {
   char buf[32];
@@ -510,6 +534,7 @@ static void synctoolbar(void)
   gtk_drop_down_set_selected(GTK_DROP_DOWN(speeddrop), multiplier);
   sprintf(buf, "HR %04X", adparam);
   gtk_button_set_label(GTK_BUTTON(hrbutton), buf);
+  gtk_range_set_value(GTK_RANGE(volumescale), mastervolume);
   syncing = 0;
 }
 
@@ -606,6 +631,7 @@ static gboolean tick(gpointer data)
     updatestatus();
   }
   wasplaying = playing;
+  monitor_update();
   return G_SOURCE_CONTINUE;
 }
 
@@ -691,6 +717,27 @@ static void onplay(GSimpleAction *action, GVariant *parameter, gpointer data)
   ui_refresh();
 }
 
+// Play from the orderlist entry under the cursor, with the song in the state
+// it would be in had it played from the start
+void ui_playfromhere(void)
+{
+  if (eseditpos >= songlen[esnum][eschn])
+  {
+    ui_toast("Choose a pattern in the orderlist to play from");
+    return;
+  }
+  if (!render_seek(esnum, eschn, eseditpos, 1800))
+    ui_toast("The song doesn't reach this position when played from the start");
+  ui_refresh();
+}
+
+static void onloop(GSimpleAction *action, GVariant *parameter, gpointer data)
+{
+  loopplay = !loopplay;
+  if (!loopplay) looprowend = -1;
+  g_simple_action_set_state(action, g_variant_new_boolean(loopplay));
+}
+
 static void onstop(GSimpleAction *action, GVariant *parameter, gpointer data)
 {
   stopsong();
@@ -751,6 +798,17 @@ static void ondecodetables(GSimpleAction *action, GVariant *parameter, gpointer 
   settings_decodetables = !settings_decodetables;
   g_simple_action_set_state(action, g_variant_new_boolean(settings_decodetables));
   grid_relayout();
+  savesettings();
+}
+
+static void onshowmonitor(GSimpleAction *action, GVariant *parameter, gpointer data)
+{
+  int piano = settings_showpiano, sidstate = settings_showsidstate;
+
+  if (GPOINTER_TO_INT(data)) sidstate = !sidstate;
+  else piano = !piano;
+  monitor_setvisible(piano, sidstate);
+  g_simple_action_set_state(action, g_variant_new_boolean(GPOINTER_TO_INT(data) ? sidstate : piano));
   savesettings();
 }
 
@@ -851,6 +909,7 @@ static GMenuModel *buildmenu(void)
     {"Play Pattern", "app.playpattern", "F3"},
     {"Stop", "app.stop", "F4"},
     {"Mute Channel", "app.mute", "<Shift>F4"},
+    {"Loop", "app.loop", NULL},
     {NULL}
   };
   static const MENUITEM view[] = {
@@ -859,6 +918,8 @@ static GMenuModel *buildmenu(void)
     {"Hexadecimal Row Numbers", "app.hexrows", NULL},
     {"Dots for Empty Fields", "app.dots", NULL},
     {"Describe Table Rows", "app.decodetables", NULL},
+    {"Piano Keyboard", "app.showpiano", NULL},
+    {"SID Registers", "app.showsidstate", NULL},
     {"Fullscreen", "app.fullscreen", "<Alt>Return"},
     {NULL}
   };
@@ -919,6 +980,18 @@ static void addactions(void)
   g_object_unref(action);
   action = g_simple_action_new_stateful("dots", NULL, g_variant_new_boolean(patterndispmode & 2));
   g_signal_connect(action, "activate", G_CALLBACK(ontoggleaction), GINT_TO_POINTER(2));
+  g_action_map_add_action(G_ACTION_MAP(app), G_ACTION(action));
+  g_object_unref(action);
+  action = g_simple_action_new_stateful("loop", NULL, g_variant_new_boolean(loopplay));
+  g_signal_connect(action, "activate", G_CALLBACK(onloop), NULL);
+  g_action_map_add_action(G_ACTION_MAP(app), G_ACTION(action));
+  g_object_unref(action);
+  action = g_simple_action_new_stateful("showpiano", NULL, g_variant_new_boolean(settings_showpiano));
+  g_signal_connect(action, "activate", G_CALLBACK(onshowmonitor), GINT_TO_POINTER(0));
+  g_action_map_add_action(G_ACTION_MAP(app), G_ACTION(action));
+  g_object_unref(action);
+  action = g_simple_action_new_stateful("showsidstate", NULL, g_variant_new_boolean(settings_showsidstate));
+  g_signal_connect(action, "activate", G_CALLBACK(onshowmonitor), GINT_TO_POINTER(1));
   g_action_map_add_action(G_ACTION_MAP(app), G_ACTION(action));
   g_object_unref(action);
   action = g_simple_action_new_stateful("decodetables", NULL, g_variant_new_boolean(settings_decodetables));
@@ -993,6 +1066,16 @@ static GtkWidget *buildheaderbar(void)
   adw_header_bar_pack_start(ADW_HEADER_BAR(header), followbutton);
 
   {
+    GtkWidget *loopbutton = gtk_toggle_button_new();
+    gtk_button_set_icon_name(GTK_BUTTON(loopbutton), "media-playlist-repeat-song-symbolic");
+    gtk_actionable_set_action_name(GTK_ACTIONABLE(loopbutton), "app.loop");
+    gtk_widget_set_tooltip_text(loopbutton, "Loop: repeat the patterns playing instead of moving on. "
+      "With rows marked, Play Pattern (F3) loops just those rows.");
+    gtk_widget_set_focusable(loopbutton, FALSE);
+    adw_header_bar_pack_start(ADW_HEADER_BAR(header), loopbutton);
+  }
+
+  {
     GtkWidget *undobox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
     gtk_widget_add_css_class(undobox, "linked");
     gtk_box_append(GTK_BOX(undobox), actionbutton("edit-undo-symbolic", "app.undo", "Undo (Ctrl+Z)"));
@@ -1051,6 +1134,18 @@ static GtkWidget *buildtoolbar(void)
   gtk_box_append(GTK_BOX(bar), labelled("SID", siddrop));
   speeddrop = dropdown(speeds, G_CALLBACK(onspeedchanged), "Playroutine speed multiplier (Shift+F5/F6)");
   gtk_box_append(GTK_BOX(bar), labelled("Speed", speeddrop));
+  volumescale = gtk_scale_new_with_range(GTK_ORIENTATION_HORIZONTAL, 0, 100, 5);
+  gtk_scale_set_draw_value(GTK_SCALE(volumescale), FALSE);
+  gtk_widget_set_size_request(volumescale, 90, -1);
+  gtk_widget_set_focusable(volumescale, FALSE);
+  gtk_widget_set_tooltip_text(volumescale, "Playback volume (doesn't affect exported WAV files)");
+  g_signal_connect(volumescale, "value-changed", G_CALLBACK(onvolumechanged), NULL);
+  {
+    GtkWidget *box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 2);
+    gtk_box_append(GTK_BOX(box), gtk_image_new_from_icon_name("audio-volume-high-symbolic"));
+    gtk_box_append(GTK_BOX(box), volumescale);
+    gtk_box_append(GTK_BOX(bar), box);
+  }
   hrbutton = gtk_button_new_with_label("HR 0F00");
   gtk_widget_set_tooltip_text(hrbutton, "Hard restart ADSR (Shift+F7)");
   gtk_widget_set_focusable(hrbutton, FALSE);
@@ -1152,6 +1247,21 @@ static void loadsettings(void)
     v = g_key_file_get_boolean(keys, "view", "describe-tables", &error);
     if (!error) settings_decodetables = v;
     g_clear_error(&error);
+    v = g_key_file_get_integer(keys, "sound", "volume", &error);
+    if (!error) mastervolume = CLAMP(v, 0, 100);
+    g_clear_error(&error);
+    v = g_key_file_get_integer(keys, "sound", "detune", &error);
+    if (!error) ui_setdetune(CLAMP(v, -100, 100));
+    g_clear_error(&error);
+    v = g_key_file_get_boolean(keys, "editor", "auto-next-pattern", &error);
+    if (!error) autonextpattern = v;
+    g_clear_error(&error);
+    v = g_key_file_get_boolean(keys, "view", "piano", &error);
+    if (!error) settings_showpiano = v;
+    g_clear_error(&error);
+    v = g_key_file_get_boolean(keys, "view", "sid-registers", &error);
+    if (!error) settings_showsidstate = v;
+    g_clear_error(&error);
   }
   g_key_file_unref(keys);
   g_free(path);
@@ -1166,6 +1276,11 @@ static void savesettings(void)
   g_key_file_load_from_file(keys, path, G_KEY_FILE_KEEP_COMMENTS, NULL);
   g_key_file_set_integer(keys, "editor", "backup-interval", settings_backupinterval);
   g_key_file_set_boolean(keys, "view", "describe-tables", settings_decodetables);
+  g_key_file_set_integer(keys, "sound", "volume", mastervolume);
+  g_key_file_set_integer(keys, "sound", "detune", sid_detune);
+  g_key_file_set_boolean(keys, "editor", "auto-next-pattern", autonextpattern);
+  g_key_file_set_boolean(keys, "view", "piano", settings_showpiano);
+  g_key_file_set_boolean(keys, "view", "sid-registers", settings_showsidstate);
   g_mkdir_with_parents(dir, 0755);
   g_key_file_save_to_file(keys, path, NULL);
   g_key_file_unref(keys);
@@ -1259,7 +1374,16 @@ static void onactivate(GtkApplication *application, gpointer data)
   gtk_paned_set_start_child(GTK_PANED(top), buildorderpanel());
   gtk_paned_set_resize_start_child(GTK_PANED(top), FALSE);
   gtk_paned_set_shrink_start_child(GTK_PANED(top), FALSE);
-  gtk_paned_set_end_child(GTK_PANED(top), framed(patterngrid));
+  {
+    // The SID registers, when shown, sit under the pattern editor
+    GtkWidget *middle = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    GtkWidget *pattframe = framed(patterngrid);
+
+    gtk_widget_set_vexpand(pattframe, TRUE);
+    gtk_box_append(GTK_BOX(middle), pattframe);
+    gtk_box_append(GTK_BOX(middle), monitor_sidview_new());
+    gtk_paned_set_end_child(GTK_PANED(top), middle);
+  }
   gtk_paned_set_shrink_end_child(GTK_PANED(top), FALSE);
 
   // Tables and song information below them
@@ -1286,6 +1410,7 @@ static void onactivate(GtkApplication *application, gpointer data)
   toolbarview = adw_toolbar_view_new();
   adw_toolbar_view_add_top_bar(ADW_TOOLBAR_VIEW(toolbarview), buildheaderbar());
   adw_toolbar_view_add_top_bar(ADW_TOOLBAR_VIEW(toolbarview), buildtoolbar());
+  adw_toolbar_view_add_bottom_bar(ADW_TOOLBAR_VIEW(toolbarview), monitor_piano_new());
   adw_toolbar_view_add_bottom_bar(ADW_TOOLBAR_VIEW(toolbarview), buildstatusbar());
   adw_toolbar_view_set_content(ADW_TOOLBAR_VIEW(toolbarview), toastoverlay);
   adw_application_window_set_content(ADW_APPLICATION_WINDOW(window), toolbarview);

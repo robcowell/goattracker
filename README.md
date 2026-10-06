@@ -118,6 +118,18 @@ The settings that used to be command-line options or hand edits to `goattrk2.cfg
 - The status bar shows the **song length** next to the play time (for example `00:00 / 2:41`). It's measured by a fast silent run of the playroutine, a moment after you stop editing.
 - **Export Again** (Ctrl+F9) packs the song again to the last exported file with the same options, without opening the dialog.
 
+### Playback
+
+![Playing with the SID registers and piano keyboard shown](docs/screenshots/playback.png)
+
+- **Loop** (the repeat button in the header bar, or Playback → Loop): while the song plays, each channel repeats the pattern it is on instead of moving on, so you can work on a passage while it plays. With rows marked in the pattern editor, **Play Pattern** (F3) loops just those rows.
+- **Play from Here** (Ctrl+Enter in the orderlist, or its right-click menu) starts at the chosen position with everything as it would be had the song played from the start: tempo, transposes, filter and the song timer. The playroutine runs silently up to that point first, which takes a fraction of a second.
+- **Piano keyboard** (View → Piano Keyboard) under the editors shows the note each channel is sounding in its channel colour, following vibrato, portamento and arpeggios. Click a key to hear it with the current instrument.
+- **SID registers** (View → SID Registers) under the pattern editor show each voice's note, waveform bits, ADSR, pulse width and frequency, and the filter's type, resonance, routing, volume and cutoff, as the playroutine writes them.
+- **Volume** is a slider in the toolbar and in Preferences. It only affects what you hear, not exported WAV files.
+- **Detune** in Preferences runs the emulated SID up to a semitone fast or slow, to play along with other instruments. The tempo is unchanged.
+- **Continue into the next pattern** in Preferences: moving the cursor past the end of a pattern goes on to the next pattern in that channel's orderlist, and past the start goes back to the previous one.
+
 ### Menus, toolbar and status bar
 
 - **Header bar:** transport controls, follow-play, and undo/redo.

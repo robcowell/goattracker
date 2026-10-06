@@ -878,18 +878,20 @@ void ui_showsoundfailure(void)
 typedef enum
 {
   PREF_BUFFER, PREF_MIXRATE, PREF_INTERPOLATION, PREF_TIMING, PREF_HARDSID, PREF_CATWEASEL,
-  PREF_FINEVIB, PREF_PULSEOPT, PREF_REALTIMEOPT, PREF_BACKUPS
+  PREF_FINEVIB, PREF_PULSEOPT, PREF_REALTIMEOPT, PREF_BACKUPS, PREF_VOLUME, PREF_DETUNE, PREF_AUTONEXT
 } PREFERENCE;
 
 static const unsigned mixrates[] = {11025, 22050, 32000, 44100, 48000};
 
 static void onprefspin(AdwSpinRow *row, GParamSpec *pspec, gpointer data)
 {
-  unsigned v = (unsigned)adw_spin_row_get_value(row);
+  int v = (int)adw_spin_row_get_value(row);
 
   switch (GPOINTER_TO_INT(data))
   {
     case PREF_BUFFER: b = v; break;
+    case PREF_VOLUME: mastervolume = v; ui_refresh(); break;
+    case PREF_DETUNE: ui_setdetune(v); break;
     case PREF_HARDSID: hardsid = v; ui_restartsound(); break;
     case PREF_BACKUPS: settings_backupinterval = v; ui_backupschanged(); break;
   }
@@ -922,6 +924,7 @@ static void onprefswitch(AdwSwitchRow *row, GParamSpec *pspec, gpointer data)
     case PREF_FINEVIB: usefinevib = v; finevibrato = v; break;
     case PREF_PULSEOPT: optimizepulse = v; break;
     case PREF_REALTIMEOPT: optimizerealtime = v; break;
+    case PREF_AUTONEXT: autonextpattern = v; break;
   }
   ui_refresh();
 }
@@ -1014,6 +1017,9 @@ void ui_preferences(void)
   prefcombo(group, "SID Emulation", "reSID-fp models the 6581 filter distortion; interpolation costs more CPU",
     interpolations, interpolate & 3, PREF_INTERPOLATION);
   prefcombo(group, "Timing", NULL, timings, ntsc & 1, PREF_TIMING);
+  prefspin(group, "Volume", "Percent; exported WAV files are not affected", 0, 100, 5, mastervolume, PREF_VOLUME);
+  prefspin(group, "Detune", "Cents; runs the emulated SID slightly fast or slow to match other instruments. "
+    "WAV exports are detuned too.", -100, 100, 1, sid_detune, PREF_DETUNE);
 
   group = prefgroup(page, "Hardware", NULL);
   prefspin(group, "HardSID Device", "0 = off, 1 = first device, and so on", 0, 8, 1, hardsid, PREF_HARDSID);
@@ -1034,6 +1040,8 @@ void ui_preferences(void)
   gtk_widget_add_css_class(button, "flat");
   g_signal_connect(button, "clicked", G_CALLBACK(onshowbackups), NULL);
   adw_action_row_add_suffix(ADW_ACTION_ROW(row), button);
+  prefswitch(group, "Continue into the Next Pattern", "Moving the cursor past the end of a pattern goes on to "
+    "the next pattern in the channel's orderlist", autonextpattern, PREF_AUTONEXT);
 
   adw_preferences_dialog_add(ADW_PREFERENCES_DIALOG(dialog), ADW_PREFERENCES_PAGE(page));
   adw_dialog_present(dialog, GTK_WIDGET(mainwindow));

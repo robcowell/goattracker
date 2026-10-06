@@ -46,6 +46,11 @@ extern unsigned char freqtbllo[];
 extern unsigned char freqtblhi[];
 extern int lastsonginit;
 extern int songloops[MAX_CHN];
+extern int loopplay;
+extern int looprowstart;
+extern int looprowend;
+extern int seqpos[MAX_CHN];
+extern unsigned seqcount[MAX_CHN];
 #endif
 
 void initchannels(void);

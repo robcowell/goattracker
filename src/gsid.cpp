@@ -6,6 +6,7 @@
 
 #include <stdlib.h>
 #include <stdio.h>
+#include <math.h>
 #include "resid/sid.h"
 #include "resid-fp/sidfp.h"
 
@@ -14,6 +15,9 @@
 
 int clockrate;
 int samplerate;
+int sid_detune = 0;       // cents; the emulated SID runs this much fast or slow
+static int baseclockrate;
+static unsigned lastinterpolate;
 unsigned char sidreg[NUMSIDREGS];
 
 unsigned char sidorder[] =
@@ -50,6 +54,8 @@ void sid_init(int speed, unsigned m, unsigned ntsc, unsigned interpolate, unsign
   if (customclockrate)
     clockrate = customclockrate;
 
+  baseclockrate = clockrate;
+  lastinterpolate = interpolate;
   samplerate = speed;
 
   if (!usefp)
@@ -73,18 +79,7 @@ void sid_init(int speed, unsigned m, unsigned ntsc, unsigned interpolate, unsign
     if (!sidfp) sidfp = new SIDFP;
   }
 
-  switch(interpolate)
-  {
-    case 0:
-    if (sid) sid->set_sampling_parameters(clockrate, SAMPLE_FAST, speed);
-    if (sidfp) sidfp->set_sampling_parameters(clockrate, SAMPLE_INTERPOLATE, speed);
-    break;
-
-    default:
-    if (sid) sid->set_sampling_parameters(clockrate, SAMPLE_INTERPOLATE, speed);
-    if (sidfp) sidfp->set_sampling_parameters(clockrate, SAMPLE_RESAMPLE_INTERPOLATE, speed);
-    break;
-  }
+  sid_setdetune(sid_detune);
 
   if (sid) sid->reset();
   if (sidfp) sidfp->reset();
@@ -119,6 +114,30 @@ void sid_init(int speed, unsigned m, unsigned ntsc, unsigned interpolate, unsign
       filterparams.type4b);
     sidfp->set_voice_nonlinearity(
       filterparams.voicenonlinearity);
+  }
+}
+
+// Detune by running the emulated chip's clock faster or slower. Both the
+// clock reSID is told about and the cycles it is given per sample scale
+// together, so pitch changes but the number of samples per frame (and so the
+// tempo) doesn't. Can be called during playback with the audio locked.
+void sid_setdetune(int cents)
+{
+  sid_detune = cents;
+  if ((!sid) && (!sidfp)) return;
+  clockrate = (int)(baseclockrate * pow(2.0, cents / 1200.0) + 0.5);
+
+  switch(lastinterpolate)
+  {
+    case 0:
+    if (sid) sid->set_sampling_parameters(clockrate, SAMPLE_FAST, samplerate);
+    if (sidfp) sidfp->set_sampling_parameters(clockrate, SAMPLE_INTERPOLATE, samplerate);
+    break;
+
+    default:
+    if (sid) sid->set_sampling_parameters(clockrate, SAMPLE_INTERPOLATE, samplerate);
+    if (sidfp) sidfp->set_sampling_parameters(clockrate, SAMPLE_RESAMPLE_INTERPOLATE, samplerate);
+    break;
   }
 }
 

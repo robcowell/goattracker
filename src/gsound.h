@@ -31,6 +31,7 @@
 #ifndef GSOUND_C
 extern int playspeed;
 extern unsigned framerate;
+extern int mastervolume;
 #endif
 
 int sound_init(unsigned b, unsigned mr, unsigned writer, unsigned hardsid, unsigned m, unsigned ntsc, unsigned multiplier, unsigned catweasel, unsigned interpolate, unsigned customclockrate);

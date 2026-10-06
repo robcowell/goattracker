@@ -24,4 +24,11 @@ void render_end(void);
 // orderlist), or a negative value if it doesn't end within maxseconds
 double render_songlength(int subtune, int maxseconds);
 
+// Play subtune from where channel chnum starts the orderlist entry at
+// songpos, with every channel (tempo, transposes, filter) where it would be
+// had the song played from the beginning: the playroutine runs silently up
+// to that point and live playback continues from there. Returns 0, with
+// playback stopped, if the position isn't reached within maxseconds.
+int render_seek(int subtune, int chnum, int songpos, int maxseconds);
+
 #endif
