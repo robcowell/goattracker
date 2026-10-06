@@ -34,6 +34,8 @@ static char *genkeys[] = {
   "SHIFT+ESC Clear/optimize all musicdata",
   "ESC Exit program",
   "CTRL+S Save the song (asks for a name the first time)",
+  "SHIFT+F11 Export the song as a WAV file",
+  "CTRL+F9 Pack and export again with the last settings",
   "CTRL+, Preferences",
   "CTRL+Z Undo",
   "CTRL+SHIFT+Z, CTRL+Y Redo",
