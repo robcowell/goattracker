@@ -65,6 +65,15 @@ extern int settings_backupinterval;
 void ui_backupschanged(void);
 void ui_restartsound(void);
 
+// File chooser (gtkdialogs.c): done is called with the chosen path
+typedef void (*FILEDONE)(const char *path, gpointer data);
+void ui_choosefile(const char *title, const char *dir, const char *name, const char *pattern,
+  const char *filtername, int save, FILEDONE done, gpointer data);
+void ui_exportagain(void);
+
+// gtkwav.c
+void ui_wavexport(void);
+
 // gtkinfo.c: plain-language descriptions of song data
 void info_describe(char *buf, int size);
 void table_describe(int table, int pos, char *buf, int size, int brief);

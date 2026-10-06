@@ -46,6 +46,7 @@ int psnum = 0;
 int songinit = 0;
 int lastsonginit = 0;
 int startpattpos = 0;
+int songloops[MAX_CHN];   // times each channel has passed its RST since the song started
 
 void sequencer(int c, CHN *cptr);
 
@@ -173,6 +174,7 @@ void playroutine(void)
 
     filterctrl = 0;
     filterptr = 0;
+    memset(songloops, 0, sizeof songloops);
 
     resettime();
 
@@ -965,6 +967,7 @@ void sequencer(int c, CHN *cptr)
     // Song loop
     if (songorder[psnum][c][cptr->songptr] == LOOPSONG)
     {
+      songloops[c]++;
       cptr->songptr = songorder[psnum][c][cptr->songptr+1];
       if (cptr->songptr >= songlen[psnum][c])
       {

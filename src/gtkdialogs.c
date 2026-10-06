@@ -14,8 +14,6 @@
 // File selection
 //
 
-typedef void (*FILEDONE)(const char *path, gpointer data);
-
 typedef struct
 {
   int save;
@@ -97,6 +95,12 @@ static void choosefile(const char *title, const char *dir, const char *name, con
   if (save) gtk_file_dialog_save(dialog, mainwindow, NULL, onfilechosen, req);
   else gtk_file_dialog_open(dialog, mainwindow, NULL, onfilechosen, req);
   g_object_unref(dialog);
+}
+
+void ui_choosefile(const char *title, const char *dir, const char *name, const char *pattern,
+  const char *filtername, int save, FILEDONE done, gpointer data)
+{
+  choosefile(title, dir, name, pattern, filtername, save, done, data);
 }
 
 // The engine works with a directory (made current) and a bare file name
@@ -714,6 +718,17 @@ static void onexportclicked(GtkButton *button, gpointer data)
   strcat(name, formatext[fileformat]);
   sprintf(filter, "*.%s", formatext[fileformat]);
   choosefile("Export Packed Song", packedpath, ui_toutf8(name), filter, "C64 Music Files", 1, onexported, NULL);
+}
+
+// Ctrl+F9: pack again to the last export's file with the same options
+void ui_exportagain(void)
+{
+  if (!strlen(packedsongname))
+  {
+    ui_relocator();
+    return;
+  }
+  onexported(packedsongname, NULL);
 }
 
 void ui_relocator(void)
