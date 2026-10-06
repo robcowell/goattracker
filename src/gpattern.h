@@ -23,6 +23,8 @@ void expandpattern(void);
 void splitpattern(void);
 void joinpattern(void);
 int autoportamento(void);
+int pattern_notekey(unsigned rawkey);
+void pattern_enternote(int newnote);
 extern int autonextpattern;
 
 #endif

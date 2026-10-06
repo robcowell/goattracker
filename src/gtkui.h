@@ -100,6 +100,14 @@ void ui_goback(void);
 void ui_playfromhere(void);
 void ui_setdetune(int cents);
 
+// gtkinput.c: polyphonic jam voices (id = what plays the note) and MIDI
+void jam_noteon(unsigned id, int note);
+void jam_noteoff(unsigned id);
+void jam_releaseall(void);
+extern char settings_midiinput[256];
+char **midi_listsources(void);
+int midi_setinput(const char *name);
+
 // Latin-1 (song data) <-> UTF-8 (GTK) conversion; returns a static buffer
 const char *ui_toutf8(const char *latin1);
 void ui_fromutf8(char *dest, const char *utf8, int maxlen);

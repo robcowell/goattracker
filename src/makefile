@@ -3,8 +3,8 @@
 #
 
 CFLAGS+=`sdl2-config --cflags`
-GTK_CFLAGS=`pkg-config --cflags gtk4 libadwaita-1`
-GTK_LIBS=`pkg-config --libs gtk4 libadwaita-1`
+GTK_CFLAGS=`pkg-config --cflags gtk4 libadwaita-1 alsa`
+GTK_LIBS=`pkg-config --libs gtk4 libadwaita-1 alsa`
 PREFIX=../linux/
 SUFFIX=
 LIBS+=`sdl2-config --libs`

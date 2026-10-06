@@ -36,6 +36,95 @@ int epmarkchn = -1;
 int epmarkstart;
 int epmarkend;
 
+// The note a key plays in the current note entry layout and octave, or -1
+int pattern_notekey(unsigned rawkey)
+{
+  int c, newnote = -1;
+
+  switch (keypreset)
+  {
+    case KEY_TRACKER:
+    for (c = 0; c < sizeof(notekeytbl1); c++)
+    {
+      if (rawkey == notekeytbl1[c])
+      {
+        newnote = FIRSTNOTE+c+epoctave*12;
+      }
+    }
+    for (c = 0; c < sizeof(notekeytbl2); c++)
+    {
+      if (rawkey == notekeytbl2[c])
+      {
+        newnote = FIRSTNOTE+c+(epoctave+1)*12;
+      }
+    }
+    break;
+
+    case KEY_DMC:
+    for (c = 0; c < sizeof(dmckeytbl); c++)
+    {
+      if (rawkey == dmckeytbl[c])
+      {
+        newnote = FIRSTNOTE+c+epoctave*12;
+      }
+    }
+    break;
+    
+    case KEY_JANKO:
+    for (c = 0; c < sizeof(jankokeytbl1); c++)
+    {
+      if (rawkey == jankokeytbl1[c])
+      {
+        newnote = FIRSTNOTE+c+epoctave*12;
+      }
+    }
+    for (c = 0; c < sizeof(jankokeytbl2); c++)
+    {
+      if (rawkey == jankokeytbl2[c])
+      {
+        newnote = FIRSTNOTE+c+(epoctave+1)*12;
+      }
+    }
+    break;
+  }
+  if (newnote > LASTNOTE) newnote = -1;
+  return newnote;
+}
+
+// Enter (in edit mode) and play a note at the pattern cursor, as typing it does
+void pattern_enternote(int newnote)
+{
+  if ((recordmode) && (eppos < pattlen[epnum[epchn]]))
+  {
+    pattern[epnum[epchn]][eppos*4] = newnote;
+    if (newnote < REST)
+    {
+      pattern[epnum[epchn]][eppos*4+1] = einum;
+    }
+    else
+    {
+      pattern[epnum[epchn]][eppos*4+1] = 0;
+    }
+    if ((shiftpressed) && (newnote == REST))
+    {
+      pattern[epnum[epchn]][eppos*4+2] = 0;
+      pattern[epnum[epchn]][eppos*4+3] = 0;
+    }
+  }
+  if (recordmode)
+  {
+    if (autoadvance < 2)
+    {
+      eppos++;
+      if (eppos > pattlen[epnum[epchn]])
+      {
+        eppos = 0;
+      }
+    }
+  }
+  playtestnote(newnote, einum, epchn);
+}
+
 void patterncommands(void)
 {
   int c, scrrep;
@@ -56,55 +145,7 @@ void patterncommands(void)
   }
   {
     int newnote = -1;
-    if (key)
-    {
-      switch (keypreset)
-      {
-        case KEY_TRACKER:
-        for (c = 0; c < sizeof(notekeytbl1); c++)
-        {
-          if ((rawkey == notekeytbl1[c]) && (!epcolumn) && (!shiftpressed))
-          {
-            newnote = FIRSTNOTE+c+epoctave*12;
-          }
-        }
-        for (c = 0; c < sizeof(notekeytbl2); c++)
-        {
-          if ((rawkey == notekeytbl2[c]) && (!epcolumn) && (!shiftpressed))
-          {
-            newnote = FIRSTNOTE+c+(epoctave+1)*12;
-          }
-        }
-        break;
-
-        case KEY_DMC:
-        for (c = 0; c < sizeof(dmckeytbl); c++)
-        {
-          if ((rawkey == dmckeytbl[c]) && (!epcolumn) && (!shiftpressed))
-          {
-            newnote = FIRSTNOTE+c+epoctave*12;
-          }
-        }
-        break;
-        
-        case KEY_JANKO:
-        for (c = 0; c < sizeof(jankokeytbl1); c++)
-        {
-          if ((rawkey == jankokeytbl1[c]) && (!epcolumn) && (!shiftpressed))
-          {
-            newnote = FIRSTNOTE+c+epoctave*12;
-          }
-        }
-        for (c = 0; c < sizeof(jankokeytbl2); c++)
-        {
-          if ((rawkey == jankokeytbl2[c]) && (!epcolumn) && (!shiftpressed))
-          {
-            newnote = FIRSTNOTE+c+(epoctave+1)*12;
-          }
-        }
-        break;
-      }
-    }
+    if ((key) && (!epcolumn) && (!shiftpressed)) newnote = pattern_notekey(rawkey);
 
     if (newnote > LASTNOTE) newnote = -1;
     if ((rawkey == 0x08) && (!epcolumn)) newnote = REST;
@@ -290,38 +331,7 @@ void patterncommands(void)
       }
     }
 
-    if (newnote >= 0)
-    {
-      if ((recordmode) && (eppos < pattlen[epnum[epchn]]))
-      {
-        pattern[epnum[epchn]][eppos*4] = newnote;
-        if (newnote < REST)
-        {
-          pattern[epnum[epchn]][eppos*4+1] = einum;
-        }
-        else
-        {
-          pattern[epnum[epchn]][eppos*4+1] = 0;
-        }
-        if ((shiftpressed) && (newnote == REST))
-        {
-          pattern[epnum[epchn]][eppos*4+2] = 0;
-          pattern[epnum[epchn]][eppos*4+3] = 0;
-        }
-      }
-      if (recordmode)
-      {
-        if (autoadvance < 2)
-        {
-          eppos++;
-          if (eppos > pattlen[epnum[epchn]])
-          {
-            eppos = 0;
-          }
-        }
-      }
-      playtestnote(newnote, einum, epchn);
-    }
+    if (newnote >= 0) pattern_enternote(newnote);
   }
   switch(rawkey)
   {
