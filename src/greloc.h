@@ -12,8 +12,9 @@
 #define PLAYER_ZPGHOSTREGS 128
 #define PLAYER_NOOPTIMIZATION 256
 #define PLAYER_FULLBUFFERED 512
+#define PLAYER_ZPPLAYSID 1024
 
-#define MAX_OPTIONS 7
+#define MAX_OPTIONS 8
 
 #define TYPE_NONE 0
 #define TYPE_OVERFLOW 1
@@ -31,6 +32,7 @@ extern unsigned char pattused[MAX_PATT];
 extern unsigned char instrused[MAX_INSTR];
 extern unsigned char tableused[MAX_TABLES][MAX_TABLELEN+1];
 extern unsigned char pattmap[MAX_PATT];
+extern int packplayorder;
 extern unsigned char instrmap[MAX_INSTR];
 extern unsigned char tablemap[MAX_TABLES][MAX_TABLELEN+1];
 extern int tableerror;

@@ -103,10 +103,12 @@ void usage(void)
     fprintf(STDOUT, "-Hx  enable/disable storing of author info. DEFAULT=disabled\n");
     fprintf(STDOUT, "-Ix  enable/disable optimizations. DEFAULT=enabled\n");
     fprintf(STDOUT, "-Jx  enable/disable full buffering. DEFAULT=disabled\n");
+    fprintf(STDOUT, "-Kx  enable/disable writing the zeropage ghostregs to the SID (with -C1). DEFAULT=disabled\n");
     fprintf(STDOUT, "-Lxx SID memory location in hex. DEFAULT=D400\n");
     fprintf(STDOUT, "-N   Use NTSC timing\n");
     fprintf(STDOUT, "-Oxx Set pulseoptimization/skipping (0 = off, 1 = on) DEFAULT=on\n");
     fprintf(STDOUT, "-P   Use PAL timing (DEFAULT)\n");
+    fprintf(STDOUT, "-Qx  enable/disable storing patterns in play order. DEFAULT=disabled\n");
     fprintf(STDOUT, "-Rxx Set realtime-effect optimization/skipping (0 = off, 1 = on) DEFAULT=on\n");
     fprintf(STDOUT, "-Sxx Set speed multiplier (0 for 25Hz, 1 for 1x, 2 for 2x etc.) DEFAULT=1\n");
     fprintf(STDOUT, "-Vxx Set finevibrato conversion (0 = off, 1 = on) DEFAULT=on\n");
@@ -306,6 +308,17 @@ int main(int argc, char **argv)
         case 'W':
         sscanf(&argv[c][2], "%x", &playeradr);
         playeradr<<=8;
+        break;
+
+        // zeropage ghostregs also written to the SID by the player
+        case 'K':
+        if (atoi(&argv[c][2])) playerversion |= PLAYER_ZPPLAYSID;
+        else playerversion &= ~PLAYER_ZPPLAYSID;
+        break;
+
+        // patterns in the order they are first played
+        case 'Q':
+        packplayorder = atoi(&argv[c][2]) ? 1 : 0;
         break;
 
         // zeropage address (third menu)

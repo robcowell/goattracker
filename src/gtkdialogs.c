@@ -648,6 +648,9 @@ static void onoptiontoggled(GObject *row, GParamSpec *pspec, gpointer data)
   if (adw_switch_row_get_active(ADW_SWITCH_ROW(row))) playerversion |= (PLAYER_BUFFERED << c);
   else playerversion &= ~(PLAYER_BUFFERED << c);
   // Sound effects, zeropage ghostregs and full buffering need buffered writes
+  // Writing the zeropage ghostregs to the SID needs them
+  if ((c) && (playerversion & PLAYER_ZPPLAYSID))
+    playerversion |= PLAYER_ZPGHOSTREGS;
   if (c)
   {
     if (playerversion & (PLAYER_SOUNDEFFECTS | PLAYER_ZPGHOSTREGS | PLAYER_FULLBUFFERED))
@@ -655,6 +658,8 @@ static void onoptiontoggled(GObject *row, GParamSpec *pspec, gpointer data)
   }
   else if (!(playerversion & PLAYER_BUFFERED))
     playerversion &= ~(PLAYER_SOUNDEFFECTS | PLAYER_ZPGHOSTREGS | PLAYER_FULLBUFFERED);
+  if (!(playerversion & PLAYER_ZPGHOSTREGS))
+    playerversion &= ~PLAYER_ZPPLAYSID;
   showoptions();
 }
 
@@ -731,6 +736,11 @@ void ui_exportagain(void)
   onexported(packedsongname, NULL);
 }
 
+static void onplayorder(AdwSwitchRow *row, GParamSpec *pspec, gpointer data)
+{
+  packplayorder = adw_switch_row_get_active(row);
+}
+
 void ui_relocator(void)
 {
   static const char *formats[] = {"SID – SIDPlay music file", "PRG – C64 program with load address",
@@ -796,6 +806,16 @@ void ui_relocator(void)
   adw_combo_row_set_model(ADW_COMBO_ROW(formatrow), G_LIST_MODEL(gtk_string_list_new(formats)));
   adw_combo_row_set_selected(ADW_COMBO_ROW(formatrow), fileformat);
   adw_preferences_group_add(ADW_PREFERENCES_GROUP(group), formatrow);
+  {
+    GtkWidget *row = adw_switch_row_new();
+
+    adw_preferences_row_set_title(ADW_PREFERENCES_ROW(row), "Patterns in Play Order");
+    adw_action_row_set_subtitle(ADW_ACTION_ROW(row), "Store the patterns in the order the song first plays them, "
+      "rather than by pattern number. The music plays the same.");
+    adw_switch_row_set_active(ADW_SWITCH_ROW(row), packplayorder);
+    g_signal_connect(row, "notify::active", G_CALLBACK(onplayorder), NULL);
+    adw_preferences_group_add(ADW_PREFERENCES_GROUP(group), row);
+  }
   adw_preferences_page_add(ADW_PREFERENCES_PAGE(page), ADW_PREFERENCES_GROUP(group));
 
   adw_toolbar_view_set_content(ADW_TOOLBAR_VIEW(view), page);

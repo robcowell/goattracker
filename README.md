@@ -153,7 +153,12 @@ The playroutine options are switches that respect their dependencies (sound effe
 | --- | --- |
 | ![Export options](docs/screenshots/export.png) | ![Export report](docs/screenshots/export-report.png) |
 
-The packer is shared with `gt2reloc`, which produces byte-identical output to the original.
+Two packing options come from [GoatTracker Ultra](https://github.com/jpage8580/GTUltra). Both are off by default, and the music plays the same either way:
+
+- **Patterns in Play Order** stores the patterns in the order the song first plays them, rather than by pattern number.
+- **Zeropage ghostregs to SID**: with zeropage ghost registers, the stock player leaves copying them to the SID to your own code. This option makes the player write them itself at the start of each frame, so the music also plays on its own (in a SID player, for example).
+
+The packer is shared with `gt2reloc`, which produces byte-identical output to the original with these options off. `gt2reloc` takes them as `-Q1` and `-K1`.
 
 ### Dialogs instead of y/n prompts
 

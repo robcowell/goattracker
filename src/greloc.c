@@ -16,7 +16,8 @@ char *playeroptname[] =
   "Store author-info",
   "Use zeropage ghostregs",
   "Disable optimization",
-  "Full SID buffering"
+  "Full SID buffering",
+  "Zeropage ghostregs to SID"
 };
 
 char *tableleftname[] = {
@@ -34,6 +35,8 @@ char *tablerightname[] = {
 unsigned char chnused[MAX_CHN];
 unsigned char pattused[MAX_PATT];
 unsigned char pattmap[MAX_PATT];
+unsigned char pattorder[MAX_PATT];
+int packplayorder = 0;    // number patterns in the order they're first played
 unsigned char instrused[MAX_INSTR];
 unsigned char instrmap[MAX_INSTR];
 unsigned char tableused[MAX_TABLES][MAX_TABLELEN+1];
@@ -278,7 +281,6 @@ void relocator(void)
   {
     if (pattused[c])
     {
-      pattmap[c] = patterns;
       patterns++;
 
       // See which instruments/tablecommands are used
@@ -337,6 +339,45 @@ void relocator(void)
         }
       }
     }
+  }
+
+  // Number the patterns: by pattern number, or optionally in the order the
+  // subtunes first play them (every channel's first positions, then the
+  // next ones, and so on)
+  {
+    unsigned char placed[MAX_PATT];
+    int count = 0;
+
+    memset(placed, 0, sizeof placed);
+    if (packplayorder)
+    {
+      for (c = 0; c < MAX_SONGS; c++)
+      {
+        if ((!songlen[c][0]) || (!songlen[c][1]) || (!songlen[c][2])) continue;
+        for (e = 0; (e < songlen[c][0]) || (e < songlen[c][1]) || (e < songlen[c][2]); e++)
+        {
+          for (d = 0; d < MAX_CHN; d++)
+          {
+            int num = songorder[c][d][e];
+
+            if ((e < songlen[c][d]) && (num < REPEAT) && (!placed[num]))
+            {
+              placed[num] = 1;
+              pattorder[count++] = num;
+            }
+          }
+        }
+      }
+    }
+    for (c = 0; c < MAX_PATT; c++)
+    {
+      if ((pattused[c]) && (!placed[c]))
+      {
+        placed[c] = 1;
+        pattorder[count++] = c;
+      }
+    }
+    for (c = 0; c < count; c++) pattmap[pattorder[c]] = c;
   }
 
   // Count amount of normal, nohr, and legato instruments
@@ -665,16 +706,12 @@ void relocator(void)
 
   // This time pack the patterns for real
   pattdatasize = 0;
-  d = 0;
-  for (c = 0; c < MAX_PATT; c++)
+  for (d = 0; d < patterns; d++)
   {
-    if (pattused[c])
-    {
-      pattoffset[d] = pattdatasize;
-      pattsize[d] = packpattern(&pattwork[pattdatasize], pattern[c], pattlen[c]);
-      pattdatasize += pattsize[d];
-      d++;
-    }
+    c = pattorder[d];
+    pattoffset[d] = pattdatasize;
+    pattsize[d] = packpattern(&pattwork[pattdatasize], pattern[c], pattlen[c]);
+    pattdatasize += pattsize[d];
   }
 
   // Then process instruments
@@ -887,6 +924,7 @@ void relocator(void)
   insertdefine("BUFFEREDWRITES", (playerversion & PLAYER_BUFFERED) ? 1 : 0);
   insertdefine("GHOSTREGS", (playerversion & (PLAYER_ZPGHOSTREGS|PLAYER_FULLBUFFERED)) ? 1 : 0);
   insertdefine("ZPGHOSTREGS", (playerversion & PLAYER_ZPGHOSTREGS) ? 1 : 0);
+  insertdefine("ZPPLAYSID", ((playerversion & PLAYER_ZPPLAYSID) && (playerversion & PLAYER_ZPGHOSTREGS)) ? 1 : 0);
   insertdefine("FIXEDPARAMS", fixedparams);
   insertdefine("SIMPLEPULSE", simplepulse);
   insertdefine("PULSEOPTIMIZATION", optimizepulse);

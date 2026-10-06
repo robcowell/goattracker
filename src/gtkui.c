@@ -1282,6 +1282,9 @@ static void loadsettings(void)
     v = g_key_file_get_integer(keys, "sound", "detune", &error);
     if (!error) ui_setdetune(CLAMP(v, -100, 100));
     g_clear_error(&error);
+    v = g_key_file_get_boolean(keys, "export", "patterns-in-play-order", &error);
+    if (!error) packplayorder = v;
+    g_clear_error(&error);
     v = g_key_file_get_boolean(keys, "editor", "auto-next-pattern", &error);
     if (!error) autonextpattern = v;
     g_clear_error(&error);
@@ -1315,6 +1318,7 @@ static void savesettings(void)
   g_key_file_set_integer(keys, "sound", "detune", sid_detune);
   g_key_file_set_string(keys, "sound", "midi-input", settings_midiinput);
   g_key_file_set_boolean(keys, "editor", "auto-next-pattern", autonextpattern);
+  g_key_file_set_boolean(keys, "export", "patterns-in-play-order", packplayorder);
   g_key_file_set_boolean(keys, "view", "piano", settings_showpiano);
   g_key_file_set_boolean(keys, "view", "sid-registers", settings_showsidstate);
   g_mkdir_with_parents(dir, 0755);
