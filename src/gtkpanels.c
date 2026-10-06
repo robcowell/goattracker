@@ -26,6 +26,8 @@ static GtkWidget *instrtitle;
 static GtkWidget *songentries[3];
 static GtkWidget *envelopearea;
 static int syncing = 0;
+static GtkWidget *instrroot;
+static int textscale = 1;
 static int forcesync = 0;
 
 // Undo coalescing keys: repeated edits of one field of one instrument (or
@@ -451,6 +453,41 @@ static GtkWidget *heading(const char *text)
 
 // The instrument column: the instrument list above the editor for the
 // selected instrument, with a movable divider between them
+// The instrument column follows the grids' text size (View → Larger Text):
+// a CSS class sets its font size, which every widget inside inherits, by
+// the same factor the grids use (12/10, 14/10, 16/10)
+void panels_setscale(int scale)
+{
+  static GtkCssProvider *provider = NULL;
+  static const char *classes[] = {NULL, NULL, "gt-textsize-2", "gt-textsize-3", "gt-textsize-4"};
+  int c;
+
+  textscale = CLAMP(scale, 1, 4);
+  if (!instrroot) return;
+  if (!provider)
+  {
+    // libadwaita gives headings and captions fixed sizes, so restate
+    // them relative to the scaled text
+    static const char *css =
+      ".gt-textsize-2 { font-size: 120%; } .gt-textsize-3 { font-size: 140%; } "
+      ".gt-textsize-4 { font-size: 160%; } "
+      ".gt-textsize-2 .heading, .gt-textsize-3 .heading, .gt-textsize-4 .heading { font-size: 100%; } "
+      ".gt-textsize-2 .caption, .gt-textsize-3 .caption, .gt-textsize-4 .caption { font-size: 82%; }";
+
+    provider = gtk_css_provider_new();
+#if GTK_CHECK_VERSION(4, 12, 0)
+    gtk_css_provider_load_from_string(provider, css);
+#else
+    gtk_css_provider_load_from_data(provider, css, -1);
+#endif
+    gtk_style_context_add_provider_for_display(gtk_widget_get_display(instrroot),
+      GTK_STYLE_PROVIDER(provider), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+  }
+  for (c = 2; c <= 4; c++) gtk_widget_remove_css_class(instrroot, classes[c]);
+  if (textscale > 1) gtk_widget_add_css_class(instrroot, classes[textscale]);
+  gtk_drawing_area_set_content_height(GTK_DRAWING_AREA(envelopearea), 36 + 8 * (textscale - 1));
+}
+
 GtkWidget *panel_instruments_new(void)
 {
   static const char *adsrnames[] = {"Attack", "Decay", "Sustain", "Release"};
@@ -539,7 +576,8 @@ GtkWidget *panel_instruments_new(void)
   }
 
   envelopearea = gtk_drawing_area_new();
-  gtk_drawing_area_set_content_height(GTK_DRAWING_AREA(envelopearea), 36);
+  instrroot = paned;
+  panels_setscale(textscale);
   gtk_drawing_area_set_draw_func(GTK_DRAWING_AREA(envelopearea), drawenvelope, NULL, NULL);
   gtk_grid_attach(GTK_GRID(grid), envelopearea, 0, row++, 3, 1);
 
