@@ -17,6 +17,7 @@ int usecatweasel = 0;
 int initted = 0;
 int firsttimeinit = 1;
 unsigned framerate = PALFRAMERATE;
+int mastervolume = 100;   // percent, applied to live output only
 Sint16 *buffer = NULL;
 FILE *writehandle = NULL;
 
@@ -508,8 +509,16 @@ void sound_mixer(Sint32 *dest, unsigned samples)
   if (writehandle)
     fwrite(buffer, samples * sizeof(Uint16), 1, writehandle);
 
-  for (c = 0; c < samples; c++)
-    dest[c] = buffer[c];
+  if (mastervolume >= 100)
+  {
+    for (c = 0; c < samples; c++)
+      dest[c] = buffer[c];
+  }
+  else
+  {
+    for (c = 0; c < samples; c++)
+      dest[c] = buffer[c] * mastervolume / 100;
+  }
 }
 
 #ifdef __WIN32__

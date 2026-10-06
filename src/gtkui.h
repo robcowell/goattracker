@@ -64,6 +64,14 @@ void ui_preferences(void);
 // gtkui.c: settings of this editor (kept in ~/.goattrk/gtkedition.ini)
 extern int settings_backupinterval;
 extern int settings_decodetables;
+extern int settings_showpiano;
+extern int settings_showsidstate;
+
+// gtkmonitor.c: piano keyboard and SID register views
+GtkWidget *monitor_piano_new(void);
+GtkWidget *monitor_sidview_new(void);
+void monitor_update(void);
+void monitor_setvisible(int showpiano, int showsidstate);
 void ui_backupschanged(void);
 void ui_restartsound(void);
 
@@ -89,6 +97,8 @@ void ui_waveformeditor(GtkWidget *parent, const GdkRectangle *where, unsigned ch
 // editor's table buttons) remember where they came from; Alt+Left goes back
 void ui_pushplace(void);
 void ui_goback(void);
+void ui_playfromhere(void);
+void ui_setdetune(int cents);
 
 // Latin-1 (song data) <-> UTF-8 (GTK) conversion; returns a static buffer
 const char *ui_toutf8(const char *latin1);

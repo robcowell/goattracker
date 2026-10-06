@@ -47,6 +47,11 @@ int songinit = 0;
 int lastsonginit = 0;
 int startpattpos = 0;
 int songloops[MAX_CHN];   // times each channel has passed its RST since the song started
+int loopplay = 0;         // editor: channels repeat the pattern they're playing
+int looprowstart = 0;     // editor: pattern play loops these rows (end -1 = off)
+int looprowend = -1;
+int seqpos[MAX_CHN];      // orderlist index of the pattern each channel last started
+unsigned seqcount[MAX_CHN]; // patterns each channel has started
 
 void sequencer(int c, CHN *cptr);
 
@@ -87,6 +92,7 @@ void initsong(int num, int mode)
   psnum = num;
   songinit = mode;
   startpattpos = 0;
+  looprowend = -1;
   sound_flush();
 }
 
@@ -97,6 +103,7 @@ void initsongpos(int num, int mode, int pattpos)
   psnum = num;
   songinit = mode;
   startpattpos = pattpos;
+  looprowend = -1;
   sound_flush();
 }
 
@@ -917,6 +924,8 @@ void playroutine(void)
         cptr->newcommand = pattern[cptr->pattnum][cptr->pattptr+2];
         cptr->newcmddata = pattern[cptr->pattnum][cptr->pattptr+3];
         cptr->pattptr += 4;
+        if ((looprowend >= 0) && (lastsonginit == PLAY_PATTERN) && (cptr->pattptr > (unsigned)looprowend * 4))
+          cptr->pattptr = looprowstart * 4;
         if (pattern[cptr->pattnum][cptr->pattptr] == ENDPATT)
           cptr->pattptr = 0x7fffffff;
 
@@ -964,6 +973,8 @@ void sequencer(int c, CHN *cptr)
   {
     cptr->pattptr = startpattpos * 4;
     if (!cptr->advance) goto SEQDONE;
+    // Looping in the editor: play the same pattern again
+    if ((loopplay) && (songinit == PLAY_PLAYING)) goto SEQDONE;
     // Song loop
     if (songorder[psnum][c][cptr->songptr] == LOOPSONG)
     {
@@ -989,6 +1000,8 @@ void sequencer(int c, CHN *cptr)
       cptr->songptr++;
     }
     // Pattern number
+    seqpos[c] = cptr->songptr;
+    seqcount[c]++;
     cptr->pattnum = songorder[psnum][c][cptr->songptr];
     if (cptr->repeat)
       cptr->repeat--;

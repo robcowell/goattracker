@@ -538,6 +538,7 @@ static void drawtables(GtkDrawingArea *area, cairo_t *cr, int width, int height,
 #define GRIDKEY(raw, shift, ascii) ((guint32)(raw) | ((guint32)(shift) << 16) | ((guint32)(ascii) << 24))
 // ...or one of these, which have no key
 #define GRID_EDITWAVEFORM GRIDKEY(0xffff, 0, 0)
+#define GRID_PLAYFROMHERE GRIDKEY(0xfffe, 0, 0)
 
 typedef struct GRIDITEM
 {
@@ -978,6 +979,7 @@ static void ongridkey(GSimpleAction *action, GVariant *parameter, GRID *g)
   editmode = g->mode;
   gtk_widget_grab_focus(g->area);
   if (key == GRID_EDITWAVEFORM) editwaveform();
+  else if (key == GRID_PLAYFROMHERE) ui_playfromhere();
   else ui_runkey(key & 0xffff, key >> 24, (key >> 16) & 1);
 }
 
@@ -1037,6 +1039,7 @@ static const GRIDITEM ordermenu[] = {
   {"Set Start Position", GRIDKEY(KEY_SPACE, 0, ' '), "space"},
   {"Set End Position", GRIDKEY(KEY_BACKSPACE, 0, 8), "BackSpace"},
   {"Open Pattern", GRIDKEY(KEY_ENTER, 0, 13), "Return"},
+  {"Play from Here", GRID_PLAYFROMHERE, "<Control>Return"},
   {NULL}, {NULL}
 };
 

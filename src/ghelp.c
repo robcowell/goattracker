@@ -76,6 +76,7 @@ static char *songkeys[] = {
   "SPC Set start position for F2 key",
   "BACKSPC Set end position for F2 key",
   "RET Go to pattern (/w SHIFT=all chns.)",
+  "CTRL+RET Play from here, as if from the start",
   "< > Select subtune",
   "- + Insert transpose down/up command",
   "SHIFT+CRSR LEFT/RIGHT Mark orderlist",

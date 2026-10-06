@@ -1072,6 +1072,31 @@ void patterncommands(void)
 }
 
 
+// Auto-next pattern (an editor option): moving the cursor past either end
+// of a pattern continues into the pattern before or after it in the
+// channel's orderlist
+int autonextpattern = 0;
+
+static int steppattern(int dir)
+{
+  int len = songlen[esnum][epchn];
+  unsigned char *order = songorder[esnum][epchn];
+  int i;
+
+  if ((eschn == epchn) && (eseditpos < len) && (order[eseditpos] == epnum[epchn])) i = eseditpos;
+  else
+    for (i = 0; (i < len) && (order[i] != epnum[epchn]); i++);
+  if (i >= len) return 0;
+  // Skip over repeats and transposes
+  for (i += dir; (i >= 0) && (i < len); i += dir)
+    if (order[i] < MAX_PATT) break;
+  if ((i < 0) || (i >= len)) return 0;
+  epnum[epchn] = order[i];
+  eschn = epchn;
+  eseditpos = i;
+  return 1;
+}
+
 void patterndown(void)
 {
   if (shiftpressed)
@@ -1085,6 +1110,7 @@ void patterndown(void)
   eppos++;
   if (eppos > pattlen[epnum[epchn]])
   {
+    if ((autonextpattern) && (!shiftpressed) && (steppattern(1))) epmarkchn = -1;
     eppos = 0;
   }
   if (shiftpressed) epmarkend = eppos;
@@ -1103,7 +1129,12 @@ void patternup(void)
   eppos--;
   if (eppos < 0)
   {
-    eppos = pattlen[epnum[epchn]];
+    if ((autonextpattern) && (!shiftpressed) && (steppattern(-1)))
+    {
+      epmarkchn = -1;
+      eppos = pattlen[epnum[epchn]] - 1;
+    }
+    else eppos = pattlen[epnum[epchn]];
   }
   if (shiftpressed) epmarkend = eppos;
 }

@@ -717,7 +717,17 @@ void generalcommands(void)
     break;
 
     case KEY_F3:
-    initsong(esnum, PLAY_PATTERN);
+    // With looping on and rows marked, loop just those rows
+    if ((loopplay) && (epmarkchn >= 0) && (epmarkstart != epmarkend))
+    {
+      int start = (epmarkstart < epmarkend) ? epmarkstart : epmarkend;
+      int end = (epmarkstart < epmarkend) ? epmarkend : epmarkstart;
+
+      initsongpos(esnum, PLAY_PATTERN, start);
+      looprowstart = start;
+      looprowend = end;
+    }
+    else initsong(esnum, PLAY_PATTERN);
     followplay = shiftpressed;
     break;
 
