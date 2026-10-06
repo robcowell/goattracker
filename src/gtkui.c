@@ -30,6 +30,12 @@ static GtkWidget *keymodedrop, *siddrop, *speeddrop, *hrbutton, *subtunespin;
 static GtkWidget *statusplay, *statuspos, *statusinfo, *statusmode;
 static int syncing = 0;
 static int wasplaying = 0;
+
+// Song length, measured by a silent offline render while stopped
+static double songlength = -2;          // -2 = not known yet, -1 = doesn't end
+static unsigned lengthversion = (unsigned)-1;
+static int lengthsubtune = -1;
+static gint64 lengthchanged = 0;
 static int quitting = 0;
 
 // Settings of this editor, kept apart from goattrk2.cfg so that file stays
@@ -262,6 +268,19 @@ static gboolean onkeypressed(GtkEventControllerKey *controller, guint keyval, gu
     return TRUE;
   }
 
+  // Shift+F11 exports a WAV and Ctrl+F9 repeats the last export (plain F11
+  // and F9 keep their classic meanings)
+  if ((raw == KEY_F11) && (state & GDK_SHIFT_MASK))
+  {
+    ui_wavexport();
+    return TRUE;
+  }
+  if ((raw == KEY_F9) && (state & GDK_CONTROL_MASK))
+  {
+    ui_exportagain();
+    return TRUE;
+  }
+
   // Ctrl+S saves and Ctrl+, opens Preferences from anywhere; Shift+S and
   // Shift+, keep their classic meanings
   if ((state & GDK_CONTROL_MASK) && (!(state & GDK_SHIFT_MASK)) && ((raw == KEY_S) || (raw == KEY_COMMA)))
@@ -342,8 +361,11 @@ static void updatestatus(void)
   char buf[128];
   int c, len = 0;
 
-  sprintf(buf, "%s  %02d:%02d", isplaying() ? "Playing" : "Stopped", timemin, timesec);
+  len = sprintf(buf, "%s  %02d:%02d", isplaying() ? "Playing" : "Stopped", timemin, timesec);
+  if (songlength >= 0) sprintf(buf + len, " / %d:%02d", (int)songlength / 60, (int)songlength % 60);
+  else if (songlength == -1) sprintf(buf + len, " / no end");
   gtk_label_set_text(GTK_LABEL(statusplay), buf);
+  len = 0;
 
   for (c = 0; c < MAX_CHN; c++)
   {
@@ -444,9 +466,30 @@ void ui_toast(const char *message)
   adw_toast_overlay_add_toast(ADW_TOAST_OVERLAY(toastoverlay), adw_toast_new(message));
 }
 
+// Measure the song again a moment after it stops changing (not while
+// playing: the measurement uses the playroutine)
+static void updatesonglength(void)
+{
+  if ((undo_version() == lengthversion) && (esnum == lengthsubtune)) return;
+  if (!lengthchanged)
+  {
+    lengthchanged = g_get_monotonic_time();
+    return;
+  }
+  if (g_get_monotonic_time() - lengthchanged < 800000) return;
+  lengthchanged = 0;
+  lengthversion = undo_version();
+  lengthsubtune = esnum;
+  songlength = render_songlength(esnum, 1800);
+  if (songlength < 0) songlength = -1;
+  updatestatus();
+}
+
 static gboolean tick(gpointer data)
 {
   int playing = isplaying();
+
+  if (!playing) updatesonglength();
 
   if ((playing) || (wasplaying))
   {
@@ -559,6 +602,8 @@ static void onsimpleaction(GSimpleAction *action, GVariant *parameter, gpointer 
   else if (!strcmp(name, "save")) ui_quicksave();
   else if (!strcmp(name, "saveas")) ui_savesong();
   else if (!strcmp(name, "prefs")) ui_preferences();
+  else if (!strcmp(name, "exportagain")) ui_exportagain();
+  else if (!strcmp(name, "wav")) ui_wavexport();
   else if (!strcmp(name, "loadinstr")) ui_loadinstrument();
   else if (!strcmp(name, "saveinstr")) ui_saveinstrument();
   else if (!strcmp(name, "export")) ui_relocator();
@@ -677,6 +722,8 @@ static GMenuModel *buildmenu(void)
     {"Load Instrument…", "app.loadinstr", NULL},
     {"Save Instrument…", "app.saveinstr", NULL},
     {"Pack, Relocate & Export…", "app.export", "F9"},
+    {"Export Again", "app.exportagain", "<Control>F9"},
+    {"Export WAV…", "app.wav", "<Shift>F11"},
     {NULL}
   };
   static const MENUITEM playback[] = {
@@ -715,7 +762,7 @@ static GMenuModel *buildmenu(void)
 
 static void addactions(void)
 {
-  static const char *simple[] = {"undo", "redo", "new", "open", "merge", "save", "saveas", "prefs", "loadinstr", "saveinstr", "export",
+  static const char *simple[] = {"undo", "redo", "new", "open", "merge", "save", "saveas", "prefs", "exportagain", "wav", "loadinstr", "saveinstr", "export",
     "help", "quit", "mute", "fullscreen", "zoomin", "zoomout", NULL};
   static const struct { const char *name; int mode; } plays[] = {
     {"play", PLAY_BEGINNING}, {"playpos", PLAY_POS}, {"playpattern", PLAY_PATTERN}};

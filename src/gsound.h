@@ -28,6 +28,11 @@
 
 #define MIXBUFFERSIZE 65536
 
+#ifndef GSOUND_C
+extern int playspeed;
+extern unsigned framerate;
+#endif
+
 int sound_init(unsigned b, unsigned mr, unsigned writer, unsigned hardsid, unsigned m, unsigned ntsc, unsigned multiplier, unsigned catweasel, unsigned interpolate, unsigned customclockrate);
 void sound_uninit(void);
 void sound_suspend(void);

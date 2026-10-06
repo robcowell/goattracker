@@ -27,9 +27,9 @@ ENGINE_OBJS=goatdata.o gsong.o gorder.o gpattern.o ginstr.o gtable.o gplay.o gdi
 gsound.o gsid.o $(RESID_OBJS) $(ASM_OBJS) $(BME_OBJS)
 
 # GTK user interface
-GUI_OBJS=gtkui.o gtkgrid.o gtkpanels.o gtkdialogs.o gtkinfo.o
+GUI_OBJS=gtkui.o gtkgrid.o gtkpanels.o gtkdialogs.o gtkinfo.o gtkwav.o
 
-$(PREFIX)goattrk2$(SUFFIX): $(GUI_OBJS) goattrk2.o greloc.o gundo.o $(ENGINE_OBJS)
+$(PREFIX)goattrk2$(SUFFIX): $(GUI_OBJS) goattrk2.o greloc.o gundo.o grender.o $(ENGINE_OBJS)
 	$(CXX) -o $@ $^ $(LIBS) $(GTK_LIBS)
 	strip $@
 

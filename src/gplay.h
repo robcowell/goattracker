@@ -45,6 +45,7 @@ extern unsigned char masterfader;
 extern unsigned char freqtbllo[];
 extern unsigned char freqtblhi[];
 extern int lastsonginit;
+extern int songloops[MAX_CHN];
 #endif
 
 void initchannels(void);
