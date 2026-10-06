@@ -39,5 +39,11 @@ void roll_tick(void);
 void roll_noteon(unsigned id, int note);
 void roll_noteoff(unsigned id);
 void roll_releaseall(void);
+void roll_setinstrument(int instrnum);
+
+// smsound.c: the instruments sidebar
+GtkWidget *sound_new(void);
+void sound_refresh(void);
+void sound_select(int instrnum);
 
 #endif
