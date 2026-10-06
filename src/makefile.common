@@ -25,12 +25,12 @@ BME_OBJS=bme/bme_snd.o bme/bme_io.o bme/bme_end.o bme/bme.o
 
 # Song data, playroutine, sound and file handling shared by the editor and gt2reloc
 ENGINE_OBJS=goatdata.o gsong.o gorder.o gpattern.o ginstr.o gtable.o gplay.o gdisplay.o gfile.o ghelp.o \
-gsound.o gsid.o $(RESID_OBJS) $(ASM_OBJS) $(BME_OBJS)
+gsound.o gsid.o grecipe.o ginfo.o gundo.o $(RESID_OBJS) $(ASM_OBJS) $(BME_OBJS)
 
 # GTK user interface
 GUI_OBJS=gtkui.o gtkgrid.o gtkpanels.o gtkdialogs.o gtkwav.o gtkmonitor.o gtkinput.o
 
-$(PREFIX)goattrk2$(SUFFIX): $(GUI_OBJS) goattrk2.o greloc.o gundo.o grender.o ginfo.o ginput.o $(ENGINE_OBJS)
+$(PREFIX)goattrk2$(SUFFIX): $(GUI_OBJS) goattrk2.o greloc.o grender.o ginput.o $(ENGINE_OBJS)
 	$(CXX) -o $@ $^ $(LIBS) $(GTK_LIBS)
 	strip $@
 
@@ -41,9 +41,9 @@ $(GUI_OBJS): gtkui.h goattrk2.h gui.h gundo.h ginfo.h ginput.h
 
 # SidMonkey: its own GTK user interface on the same engine. goattrk2.o
 # provides the engine's settings, globals and startup.
-SM_OBJS=smui.o smarrange.o smroll.o
+SM_OBJS=smui.o smarrange.o smroll.o smsound.o
 
-$(PREFIX)sidmonkey$(SUFFIX): $(SM_OBJS) goattrk2.o greloc.o gundo.o grender.o ginfo.o ghost.o garrange.o groll.o ginput.o $(ENGINE_OBJS)
+$(PREFIX)sidmonkey$(SUFFIX): $(SM_OBJS) goattrk2.o greloc.o grender.o ghost.o garrange.o groll.o ginput.o $(ENGINE_OBJS)
 	$(CXX) -o $@ $^ $(LIBS) $(GTK_LIBS)
 	strip $@
 

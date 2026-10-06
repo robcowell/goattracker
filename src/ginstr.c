@@ -210,6 +210,7 @@ void instrumentcommands(void)
 void clearinstr(int num)
 {
   memset(&instr[num], 0, sizeof(INSTR));
+  recipe_forget(num);
   if (num)
   {
     if (multiplier)

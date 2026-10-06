@@ -223,6 +223,9 @@ static void writesongchunks(FILE *handle)
   }
   fwrite8(handle, CHUNK_SIDTRACKER64);
   fwrite8(handle, songsidtracker64);
+  // SidMonkey's recipes go last: readers stop at the first chunk they don't
+  // know
+  recipe_writechunk(handle);
 }
 
 // Read GoatTracker Ultra's trailing chunks until an unknown or missing one
@@ -260,6 +263,8 @@ static void readsongchunks(FILE *handle, int instrcount)
     }
     else if (id == CHUNK_SIDTRACKER64)
       songsidtracker64 = fread8(handle) ? 1 : 0;
+    else if (id == CHUNK_RECIPES)
+      recipe_readchunk(handle);
     else
       break;
   }
@@ -1610,6 +1615,7 @@ void clearsong(int cs, int cp, int ci, int ct, int cn)
   {
     for (c = 0; c < MAX_INSTR; c++)
       clearinstr(c);
+    recipe_forgetall();
     memset(&instrcopybuffer, 0, sizeof(INSTR));
     eipos = 0;
     eicolumn = 0;
