@@ -170,6 +170,17 @@ static void syncinstrument(void)
   syncing = 1;
   if (instr >= 1) gtk_drop_down_set_selected(instrdrop, instr - 1);
   syncing = 0;
+  sound_select(curinstr);
+}
+
+// The sidebar chose an instrument
+void roll_setinstrument(int instrnum)
+{
+  curinstr = instrnum;
+  syncing = 1;
+  if ((instrnum >= 1) && ((guint)instrnum <= g_list_model_get_n_items(G_LIST_MODEL(instrlist))))
+    gtk_drop_down_set_selected(instrdrop, instrnum - 1);
+  syncing = 0;
 }
 
 static void describenote(void)
@@ -862,6 +873,7 @@ static void oninstrument(GObject *drop, GParamSpec *pspec, gpointer data)
 {
   if (syncing) return;
   curinstr = gtk_drop_down_get_selected(instrdrop) + 1;
+  sound_select(curinstr);
   // Picking an instrument with a note selected gives it that instrument
   if ((selnote >= 0) && (selnote < roll.nnotes) && (roll_instrument(&roll, selnote) != curinstr))
   {

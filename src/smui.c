@@ -157,6 +157,7 @@ void sm_songchanged(void)
   gtk_widget_set_visible(gtk_widget_get_parent(GTK_WIDGET(tunespin)), sm_subtunes() > 1);
   updatetitle();
   roll_refreshinstruments();
+  sound_refresh();
   arrange_songchanged();
   sm_setstatus("Click a clip to select it, drag it to move it (hold Ctrl to copy), right-click for more.");
   measuresong();
@@ -167,6 +168,10 @@ void sm_songchanged(void)
 // After an edit of the song data
 void sm_edited(void)
 {
+  // A recipe instrument's filter follows the voices it plays on
+  host_lock();
+  recipe_updatefilters();
+  host_unlock();
   undo_checkpoint(0);
   updatetitle();
   measuresong();
@@ -177,6 +182,8 @@ static void undoredo(int redo)
   if (!(redo ? undo_redo() : undo_undo())) return;
   arrange_refresh();
   roll_refresh();
+  roll_refreshinstruments();
+  sound_refresh();
   updatetitle();
   measuresong();
 }
@@ -625,7 +632,7 @@ static void onactivate(GtkApplication *application, gpointer data)
   int i;
 
   sm_window = GTK_WINDOW(adw_application_window_new(application));
-  gtk_window_set_default_size(sm_window, 1100, 760);
+  gtk_window_set_default_size(sm_window, 1440, 820);
   g_signal_connect(sm_window, "close-request", G_CALLBACK(oncloserequest), NULL);
   g_signal_connect(sm_window, "notify::is-active", G_CALLBACK(onactivechanged), NULL);
   midi_sethandler("SidMonkey", onmidinote);
@@ -678,6 +685,17 @@ static void onactivate(GtkApplication *application, gpointer data)
   gtk_box_append(GTK_BOX(content), gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
   gtk_box_append(GTK_BOX(content), roll_new());
 
+  // The instruments sidebar at the right
+  {
+    GtkWidget *paned = gtk_paned_new(GTK_ORIENTATION_HORIZONTAL);
+    GtkWidget *side = sound_new();
+    gtk_paned_set_start_child(GTK_PANED(paned), content);
+    gtk_paned_set_end_child(GTK_PANED(paned), side);
+    gtk_paned_set_resize_end_child(GTK_PANED(paned), FALSE);
+    gtk_paned_set_shrink_end_child(GTK_PANED(paned), FALSE);
+    gtk_widget_set_size_request(side, 340, -1);
+    content = paned;
+  }
   toasts = ADW_TOAST_OVERLAY(adw_toast_overlay_new());
   adw_toast_overlay_set_child(toasts, content);
   adw_toolbar_view_set_content(ADW_TOOLBAR_VIEW(view), GTK_WIDGET(toasts));

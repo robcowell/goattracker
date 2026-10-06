@@ -163,10 +163,7 @@ void table_describe(int table, int pos, char *buf, int size, int brief)
 
 // Which table rows can ever be executed: followed from the instruments'
 // table pointers and every table command in the patterns and the wavetable.
-// Recalculated when the song data changes.
-static unsigned char reach[MAX_TABLES][MAX_TABLELEN];
-static unsigned reachversion;
-static int reachvalid;
+static unsigned char (*reach)[MAX_TABLELEN];
 
 static void followtable(int table, int pos);
 
@@ -210,23 +207,43 @@ static void followtable(int table, int pos)
   }
 }
 
+void table_reachmap(unsigned char map[MAX_TABLES][MAX_TABLELEN], int skipinstr)
+{
+  int c, d;
+
+  reach = map;
+  memset(map, 0, MAX_TABLES * MAX_TABLELEN);
+  for (c = 1; c < MAX_INSTR; c++)
+  {
+    if (c == skipinstr) continue;
+    for (d = 0; d < MAX_TABLES; d++)
+      if (instr[c].ptr[d]) followtable(d, instr[c].ptr[d] - 1);
+  }
+  for (c = 0; c < MAX_PATT; c++)
+    for (d = 0; d < pattlen[c]; d++)
+      followcommand(pattern[c][d * 4 + 2], pattern[c][d * 4 + 3]);
+}
+
+void table_followprogram(unsigned char map[MAX_TABLES][MAX_TABLELEN], int table, int pos)
+{
+  reach = map;
+  followtable(table, pos);
+}
+
+// Recalculated when the song data changes
+static unsigned char cached[MAX_TABLES][MAX_TABLELEN];
+static unsigned cachedversion;
+static int cachevalid;
+
 int table_isreachable(int table, int pos)
 {
-  if ((!reachvalid) || (reachversion != undo_version()))
+  if ((!cachevalid) || (cachedversion != undo_version()))
   {
-    int c, d;
-
-    memset(reach, 0, sizeof reach);
-    for (c = 1; c < MAX_INSTR; c++)
-      for (d = 0; d < MAX_TABLES; d++)
-        if (instr[c].ptr[d]) followtable(d, instr[c].ptr[d] - 1);
-    for (c = 0; c < MAX_PATT; c++)
-      for (d = 0; d < pattlen[c]; d++)
-        followcommand(pattern[c][d * 4 + 2], pattern[c][d * 4 + 3]);
-    reachversion = undo_version();
-    reachvalid = 1;
+    table_reachmap(cached, -1);
+    cachedversion = undo_version();
+    cachevalid = 1;
   }
-  return reach[table][pos];
+  return cached[table][pos];
 }
 
 static void describecommand(unsigned char cmd, unsigned char data, char *buf, int size)
