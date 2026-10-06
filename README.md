@@ -18,13 +18,15 @@ This is an unofficial port of GoatTracker v2.77. The engine and song data are un
 | A home-made text-mode file selector | The desktop's file chooser |
 | Packer options chosen with cursor keys on a text screen | A settings dialog with a report of the packed sizes |
 | Help is a text screen scrolled with the cursor keys | A help window with headed sections, scrolled with the mouse or keyboard |
+| Hearing a song outside the editor means packing it and playing it elsewhere | WAV export, with optional per-channel stems |
+| Jam mode plays one note at a time | Polyphonic jam across the three channels, plus MIDI input |
 | SDL 1.2 (no longer maintained) | GTK4, libadwaita and SDL2 audio |
 
 ## What's new
 
 ### A tracker layout you can see all at once
 
-Orderlists on the left, patterns in the middle, instruments down the right, and the wave, pulse, filter and speed tables along the bottom, all visible together and all live while the song plays. Panels are separated by draggable dividers.
+Orderlists on the left, patterns in the middle, instruments down the right, the wave, pulse, filter and speed tables along the bottom, and a piano keyboard showing what each channel is playing, all visible together and all live while the song plays. Panels are separated by draggable dividers.
 
 All three grid editors work with the mouse:
 
@@ -58,11 +60,11 @@ Table commands and jumps are coloured, and a green bar marks where the selected 
 - **Rows are described** next to their hex values: `WAVE 41 +0`, `DELAY 3`, `SET 800`, `MOD +32 x16`, `LP RES C CH 1`, `JUMP 05`. **View → Describe Table Rows** turns the column off; in a narrow window the tables scroll sideways instead.
 - **Rows nothing can reach are dimmed.** The editor follows every instrument's table pointers, the table commands in the patterns and the wavetable's own commands, so leftover data stands out. A line under each jump or stop shows where a run of rows ends.
 - **Edit Waveform…** in the wavetable's right-click menu sets a row's waveform with buttons for noise, pulse, saw, triangle, test, ring, sync and gate. The pencil next to the instrument's **1st frame wave** does the same.
-
-![Waveform editor on a wavetable row](docs/screenshots/waveform.png)
 - **Go back:** after RETURN takes you from a pattern command or instrument to its table data (or from a note to its instrument), **Alt+Left** or the arrow in the header bar returns you to where you were.
 
 ![Tables and song information](docs/screenshots/tables.png)
+
+![Waveform editor on a wavetable row](docs/screenshots/waveform.png)
 
 ### A native instrument editor
 
@@ -110,7 +112,7 @@ Songs are saved with the editor-settings block that [GoatTracker Ultra](https://
 
 ### Preferences
 
-The settings that used to be command-line options or hand edits to `goattrk2.cfg` are in **Preferences** (Ctrl+,): buffer length, mixing rate, SID emulation and interpolation, PAL/NTSC timing, HardSID and CatWeasel, the playroutine optimisations, and the backup interval. `goattrk2.cfg` keeps its stock format; settings of this edition go in `~/.goattrk/gtkedition.ini`.
+The settings that used to be command-line options or hand edits to `goattrk2.cfg` are in **Preferences** (Ctrl+,): buffer length, mixing rate, SID emulation and interpolation, PAL/NTSC timing, HardSID and CatWeasel, and the playroutine optimisations. It also has the settings new to this edition: volume, detune, MIDI input, the backup interval and continuing into the next pattern. `goattrk2.cfg` keeps its stock format; settings of this edition go in `~/.goattrk/gtkedition.ini`.
 
 ### WAV export and song length
 
@@ -134,9 +136,9 @@ The settings that used to be command-line options or hand edits to `goattrk2.cfg
 
 ### Menus, toolbar and status bar
 
-- **Header bar:** transport controls, follow-play, and undo/redo.
-- **Toolbar:** edit/jam mode, octave, row highlight step, note-entry layout (Protracker, DMC or Janko), SID model, speed multiplier and the hard-restart ADSR. These used to be hidden behind Shift+F-key combinations.
-- **Status bar:** playback time, each channel's position, and a plain-language description of the item under the cursor. For example, `F0C` reads "Tempo 12 on all channels", and a table row reads "Set pulse width 840".
+- **Header bar:** transport controls, follow-play, loop, undo/redo, and the arrow that goes back after a jump to table or instrument data.
+- **Toolbar:** edit/jam mode, octave, row highlight step, note-entry layout (Protracker, DMC or Janko), SID model, speed multiplier, playback volume and the hard-restart ADSR. These used to be hidden behind Shift+F-key combinations.
+- **Status bar:** playback time and song length, each channel's position, and a plain-language description of the item under the cursor. For example, `F0C` reads "Tempo 12 on all channels", and a table row reads "Set pulse width 840".
 - **Instrument list:** shows how many patterns use each instrument, and dims unused ones.
 
 | Main menu | View menu |
@@ -180,12 +182,14 @@ The grids use a scalable monospace font. **View → Larger Text** (or `-w2`…`-
 
 - **Keyboard:** every key command from the original works, in the editor it belongs to. The full reference is in [readme.txt](readme.txt) section 2.3, or press **F12**. The few differences:
   - Ctrl+Z and Ctrl+Y are undo and redo. Ctrl otherwise still doubles as Shift; Shift+Z still cycles auto-advance.
+  - New shortcuts: Ctrl+S saves, Ctrl+, opens Preferences, Ctrl+F9 exports again, Ctrl+Enter in the orderlist plays from that position, Shift+F11 exports a WAV, and Alt+Left goes back. Where the original treated these Ctrl keys as Shift, the Shift versions still do the classic thing; Shift+F11 used to be the same as F11 (save).
+  - In jam mode, notes stop when their key is released, and several keys can sound at once.
   - Tab cycles between the editors.
   - Text fields keep their own keys, except the function keys.
-- **Files:** `.sng` and `.ins` files are untouched in format, and so is the settings file `~/.goattrk/goattrk2.cfg`.
+- **Files:** `.sng` and `.ins` files keep the stock format, and stock GoatTracker 2 loads songs saved here. The only addition is the editor-settings block at the end of a song (see above), which it ignores. The settings file `~/.goattrk/goattrk2.cfg` is unchanged too.
 - **Command line:** the same options as before (`goattrk2 song.sng -s1 -e1` and so on). `-w` now sets the text size, and `-??` opens the help window at startup.
 - **Sound:** the same reSID and reSID-fp emulation, and the same playroutine, timing and packer.
-- **Tools:** `gt2reloc`, `ins2snd2`, `sngspli2` and `mod2sng` are built alongside the editor and behave as before.
+- **Tools:** `gt2reloc`, `ins2snd2`, `sngspli2` and `mod2sng` are built alongside the editor and behave as before. `gt2reloc` also accepts the two new packing options, `-Q1` and `-K1`.
 
 ## Building
 
