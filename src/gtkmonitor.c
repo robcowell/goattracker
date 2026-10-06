@@ -155,6 +155,9 @@ static void onpianopressed(GtkGestureClick *gesture, int npress, double x, doubl
 {
   int n = keyat(x, y, gtk_widget_get_width(piano), gtk_widget_get_height(piano));
 
+  // AdwToolbarView's bottom bars are window handles: without claiming the
+  // click, a fast double click maximizes the window and a drag moves it
+  gtk_gesture_set_state(GTK_GESTURE(gesture), GTK_EVENT_SEQUENCE_CLAIMED);
   if (n < 0) return;
   heldnote = n;
   playtestnote(FIRSTNOTE + n, einum, epchn);
