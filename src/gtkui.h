@@ -74,6 +74,7 @@ void monitor_update(void);
 void monitor_setvisible(int showpiano, int showsidstate);
 void monitor_setscale(int scale);
 void panels_setscale(int scale);
+void ui_settextscale(int scale);
 void ui_backupschanged(void);
 void ui_restartsound(void);
 

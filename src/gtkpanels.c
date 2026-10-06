@@ -453,38 +453,12 @@ static GtkWidget *heading(const char *text)
 
 // The instrument column: the instrument list above the editor for the
 // selected instrument, with a movable divider between them
-// The instrument column follows the grids' text size (View → Larger Text):
-// a CSS class sets its font size, which every widget inside inherits, by
-// the same factor the grids use (12/10, 14/10, 16/10)
+// The window's text size (View → Larger Text) is set by ui_settextscale();
+// only the envelope drawing needs resizing here
 void panels_setscale(int scale)
 {
-  static GtkCssProvider *provider = NULL;
-  static const char *classes[] = {NULL, NULL, "gt-textsize-2", "gt-textsize-3", "gt-textsize-4"};
-  int c;
-
   textscale = CLAMP(scale, 1, 4);
   if (!instrroot) return;
-  if (!provider)
-  {
-    // libadwaita gives headings and captions fixed sizes, so restate
-    // them relative to the scaled text
-    static const char *css =
-      ".gt-textsize-2 { font-size: 120%; } .gt-textsize-3 { font-size: 140%; } "
-      ".gt-textsize-4 { font-size: 160%; } "
-      ".gt-textsize-2 .heading, .gt-textsize-3 .heading, .gt-textsize-4 .heading { font-size: 100%; } "
-      ".gt-textsize-2 .caption, .gt-textsize-3 .caption, .gt-textsize-4 .caption { font-size: 82%; }";
-
-    provider = gtk_css_provider_new();
-#if GTK_CHECK_VERSION(4, 12, 0)
-    gtk_css_provider_load_from_string(provider, css);
-#else
-    gtk_css_provider_load_from_data(provider, css, -1);
-#endif
-    gtk_style_context_add_provider_for_display(gtk_widget_get_display(instrroot),
-      GTK_STYLE_PROVIDER(provider), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
-  }
-  for (c = 2; c <= 4; c++) gtk_widget_remove_css_class(instrroot, classes[c]);
-  if (textscale > 1) gtk_widget_add_css_class(instrroot, classes[textscale]);
   gtk_drawing_area_set_content_height(GTK_DRAWING_AREA(envelopearea), 36 + 8 * (textscale - 1));
 }
 

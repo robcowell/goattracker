@@ -18,7 +18,6 @@ int settings_showsidstate = 0;
 static GtkWidget *piano;
 static GtkWidget *sidview;
 static GtkWidget *sidlabels[MAX_CHN + 1][7];
-static GtkWidget *sidheads[7];
 static int drawnnotes[MAX_CHN];
 static unsigned char shownregs[NUMSIDREGS];
 static int heldnote = -1;
@@ -173,26 +172,11 @@ static int pianoheight(void)
   return 44 + 10 * (monitorscale - 1);
 }
 
-// The SID register panel's labels grow by the same factor as the grids'
-// font (10 points at the normal size), keeping the theme's relative sizes
+// The panel's text follows the window's text size (ui_settextscale());
+// widen the gaps between its columns to match
 static void scalesidview(void)
 {
-  PangoAttrList *attrs = NULL;
-  int r, c;
-
-  if (!sidview) return;
-  if (monitorscale > 1)
-  {
-    attrs = pango_attr_list_new();
-    pango_attr_list_insert(attrs, pango_attr_scale_new((10 + 2 * (monitorscale - 1)) / 10.0));
-  }
-  for (c = 0; c < 7; c++)
-  {
-    gtk_label_set_attributes(GTK_LABEL(sidheads[c]), attrs);
-    for (r = 0; r <= MAX_CHN; r++) gtk_label_set_attributes(GTK_LABEL(sidlabels[r][c]), attrs);
-  }
-  gtk_grid_set_column_spacing(GTK_GRID(sidview), 18 + 6 * (monitorscale - 1));
-  if (attrs) pango_attr_list_unref(attrs);
+  if (sidview) gtk_grid_set_column_spacing(GTK_GRID(sidview), 18 + 6 * (monitorscale - 1));
 }
 
 void monitor_setscale(int scale)
@@ -299,7 +283,7 @@ GtkWidget *monitor_sidview_new(void)
   gtk_widget_add_css_class(grid, "monospace");
   for (c = 0; c < 7; c++)
   {
-    GtkWidget *l = sidheads[c] = gtk_label_new(colheads[c]);
+    GtkWidget *l = gtk_label_new(colheads[c]);
     gtk_label_set_xalign(GTK_LABEL(l), 0);
     gtk_widget_add_css_class(l, "dim-label");
     gtk_widget_add_css_class(l, "caption");

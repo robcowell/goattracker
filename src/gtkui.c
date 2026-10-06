@@ -576,6 +576,49 @@ void ui_settitle(void)
   adw_window_title_set_subtitle(ADW_WINDOW_TITLE(windowtitle), buf);
 }
 
+// View → Larger Text: the grids draw with their own font sizes, and
+// everything else (header bar, toolbar, panels, status bar, menus, popovers
+// and dialogs) inherits a CSS font size set on the window, by the same
+// factor the grids use (12/10, 14/10, 16/10)
+static int textscale = 1;
+
+void ui_settextscale(int scale)
+{
+  static GtkCssProvider *provider = NULL;
+  static const char *classes[] = {NULL, NULL, "gt-textsize-2", "gt-textsize-3", "gt-textsize-4"};
+  int c;
+
+  textscale = CLAMP(scale, 1, 4);
+  if (!mainwindow) return;
+  if (!provider)
+  {
+    // libadwaita gives some styles fixed sizes, so restate them relative to
+    // the scaled text
+    static const char *css =
+      ".gt-textsize-2 { font-size: 120%; } .gt-textsize-3 { font-size: 140%; } "
+      ".gt-textsize-4 { font-size: 160%; } "
+      ".gt-textsize-2 popover > contents { font-size: 120%; } "
+      ".gt-textsize-3 popover > contents { font-size: 140%; } "
+      ".gt-textsize-4 popover > contents { font-size: 160%; } "
+      ".gt-textsize-2 .heading, .gt-textsize-3 .heading, .gt-textsize-4 .heading { font-size: 100%; } "
+      ".gt-textsize-2 .caption, .gt-textsize-3 .caption, .gt-textsize-4 .caption { font-size: 82%; } "
+      ".gt-textsize-2 .title-1, .gt-textsize-3 .title-1, .gt-textsize-4 .title-1 { font-size: 181%; } "
+      ".gt-textsize-2 .title-2, .gt-textsize-3 .title-2, .gt-textsize-4 .title-2 { font-size: 136%; } "
+      ".gt-textsize-2 .title-4, .gt-textsize-3 .title-4, .gt-textsize-4 .title-4 { font-size: 118%; }";
+
+    provider = gtk_css_provider_new();
+#if GTK_CHECK_VERSION(4, 12, 0)
+    gtk_css_provider_load_from_string(provider, css);
+#else
+    gtk_css_provider_load_from_data(provider, css, -1);
+#endif
+    gtk_style_context_add_provider_for_display(gtk_widget_get_display(GTK_WIDGET(mainwindow)),
+      GTK_STYLE_PROVIDER(provider), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+  }
+  for (c = 2; c <= 4; c++) gtk_widget_remove_css_class(GTK_WIDGET(mainwindow), classes[c]);
+  if (textscale > 1) gtk_widget_add_css_class(GTK_WIDGET(mainwindow), classes[textscale]);
+}
+
 static void syncundoactions(void)
 {
   g_simple_action_set_enabled(G_SIMPLE_ACTION(g_action_map_lookup_action(G_ACTION_MAP(app), "undo")), undo_canundo());
