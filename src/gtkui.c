@@ -1421,7 +1421,17 @@ static void onactivate(GtkApplication *application, gpointer data)
 
     gtk_widget_set_vexpand(pattframe, TRUE);
     gtk_box_append(GTK_BOX(middle), pattframe);
-    gtk_box_append(GTK_BOX(middle), monitor_sidview_new());
+    {
+      // Scrolls sideways if larger text makes it wider than the pattern editor
+      GtkWidget *scroll = gtk_scrolled_window_new();
+
+      gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scroll), GTK_POLICY_AUTOMATIC, GTK_POLICY_NEVER);
+      gtk_scrolled_window_set_propagate_natural_width(GTK_SCROLLED_WINDOW(scroll), TRUE);
+      gtk_scrolled_window_set_propagate_natural_height(GTK_SCROLLED_WINDOW(scroll), TRUE);
+      gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scroll), monitor_sidview_new());
+      gtk_box_append(GTK_BOX(middle), scroll);
+      gtk_widget_set_visible(scroll, settings_showsidstate);
+    }
     gtk_paned_set_end_child(GTK_PANED(top), middle);
   }
   gtk_paned_set_shrink_end_child(GTK_PANED(top), FALSE);

@@ -18,10 +18,11 @@ int settings_showsidstate = 0;
 static GtkWidget *piano;
 static GtkWidget *sidview;
 static GtkWidget *sidlabels[MAX_CHN + 1][7];
+static GtkWidget *sidheads[7];
 static int drawnnotes[MAX_CHN];
 static unsigned char shownregs[NUMSIDREGS];
 static int heldnote = -1;
-static int pianoscale = 1;     // follows the grids' text size (View → Larger Text)
+static int monitorscale = 1;     // follows the grids' text size (View → Larger Text)
 
 static const unsigned chncolors[MAX_CHN] = {0x7fb2ff, 0xffad5e, 0x58c27d};
 
@@ -115,7 +116,7 @@ static void drawpiano(GtkDrawingArea *area, cairo_t *cr, int width, int height, 
   cairo_paint(cr);
   for (n = 0; n < NUMKEYS; n++)
     if (!isblack(n)) fillkey(cr, n, ww, height, 0);
-  pango_font_description_set_size(font, (7 + 2 * (pianoscale - 1)) * PANGO_SCALE);
+  pango_font_description_set_size(font, (7 + 2 * (monitorscale - 1)) * PANGO_SCALE);
   pango_layout_set_font_description(layout, font);
   for (n = 0; n < NUMKEYS; n += 12)
   {
@@ -169,12 +170,35 @@ static void onpianoreleased(GtkGestureClick *gesture, int npress, double x, doub
 
 static int pianoheight(void)
 {
-  return 44 + 10 * (pianoscale - 1);
+  return 44 + 10 * (monitorscale - 1);
+}
+
+// The SID register panel's labels grow by the same factor as the grids'
+// font (10 points at the normal size), keeping the theme's relative sizes
+static void scalesidview(void)
+{
+  PangoAttrList *attrs = NULL;
+  int r, c;
+
+  if (!sidview) return;
+  if (monitorscale > 1)
+  {
+    attrs = pango_attr_list_new();
+    pango_attr_list_insert(attrs, pango_attr_scale_new((10 + 2 * (monitorscale - 1)) / 10.0));
+  }
+  for (c = 0; c < 7; c++)
+  {
+    gtk_label_set_attributes(GTK_LABEL(sidheads[c]), attrs);
+    for (r = 0; r <= MAX_CHN; r++) gtk_label_set_attributes(GTK_LABEL(sidlabels[r][c]), attrs);
+  }
+  gtk_grid_set_column_spacing(GTK_GRID(sidview), 18 + 6 * (monitorscale - 1));
+  if (attrs) pango_attr_list_unref(attrs);
 }
 
 void monitor_setscale(int scale)
 {
-  pianoscale = CLAMP(scale, 1, 4);
+  monitorscale = CLAMP(scale, 1, 4);
+  scalesidview();
   if (!piano) return;
   gtk_drawing_area_set_content_height(GTK_DRAWING_AREA(piano), pianoheight());
   gtk_widget_queue_draw(piano);
@@ -187,7 +211,7 @@ GtkWidget *monitor_piano_new(void)
 
   for (c = 0; c < MAX_CHN; c++) drawnnotes[c] = -1;
   piano = gtk_drawing_area_new();
-  monitor_setscale(pianoscale);
+  monitor_setscale(monitorscale);
   gtk_drawing_area_set_draw_func(GTK_DRAWING_AREA(piano), drawpiano, NULL, NULL);
   gtk_widget_set_tooltip_text(piano, "The notes the channels are playing. Click a key to play it with the current instrument.");
   g_signal_connect(gesture, "pressed", G_CALLBACK(onpianopressed), NULL);
@@ -275,7 +299,7 @@ GtkWidget *monitor_sidview_new(void)
   gtk_widget_add_css_class(grid, "monospace");
   for (c = 0; c < 7; c++)
   {
-    GtkWidget *l = gtk_label_new(colheads[c]);
+    GtkWidget *l = sidheads[c] = gtk_label_new(colheads[c]);
     gtk_label_set_xalign(GTK_LABEL(l), 0);
     gtk_widget_add_css_class(l, "dim-label");
     gtk_widget_add_css_class(l, "caption");
@@ -303,6 +327,7 @@ GtkWidget *monitor_sidview_new(void)
   }
   gtk_widget_set_tooltip_text(grid, "The SID's registers as the playroutine last wrote them");
   gtk_widget_set_visible(grid, settings_showsidstate);
+  scalesidview();
   updatesidview();
   return grid;
 }
@@ -340,5 +365,12 @@ void monitor_setvisible(int showpiano, int showsidstate)
   settings_showpiano = showpiano;
   settings_showsidstate = showsidstate;
   if (piano) gtk_widget_set_visible(piano, showpiano);
-  if (sidview) gtk_widget_set_visible(sidview, showsidstate);
+  if (sidview)
+  {
+    // ...and the pane that scrolls it, if it's in one
+    GtkWidget *scroll = gtk_widget_get_ancestor(sidview, GTK_TYPE_SCROLLED_WINDOW);
+
+    gtk_widget_set_visible(sidview, showsidstate);
+    if (scroll) gtk_widget_set_visible(scroll, showsidstate);
+  }
 }
