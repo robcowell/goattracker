@@ -174,7 +174,7 @@ The keyboard reference (**F12**) is a help window; **Shift+F12** puts the curren
 
 ### Bigger text when you want it
 
-The grids use a scalable monospace font. **View → Larger Text** (or `-w2`…`-w4` on the command line) makes the whole window bigger together: the grids, panels, toolbar, menus and dialogs. The window grows and shrinks with it, as far as the screen allows, whether you start with `-w2`…`-w4` or change the size from the View menu. It can be resized to any size, and the text size, window size and maximized state are remembered for next time. The screenshot below is at the third size, the same song as above.
+The grids use a scalable monospace font. **View → Larger Text** (or `-w2`…`-w4` on the command line) makes the whole window bigger together: the grids, panels, toolbar, menus and dialogs. The window grows and shrinks with it, as far as the screen allows, whether you start with `-w2`…`-w4` or change the size from the View menu. It can be resized to any size, and the text size, window size, maximized state and the positions of the dividers between panels are remembered for next time. The screenshot below is at the third size, the same song as above.
 
 ![Larger text in a larger window](docs/screenshots/large-text.png)
 

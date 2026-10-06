@@ -585,6 +585,12 @@ static int textscale = 1;
 // Window size and state when GoatTracker last quit (from gtkedition.ini)
 static int savedwidth = 0, savedheight = 0, savedtextscale = 1, savedmaximized = 0;
 
+// The dividers between the panels, and where they were (-1 = not saved)
+#define NUM_PANES 4
+static GtkWidget *panes[NUM_PANES];
+static const char *panekeys[NUM_PANES] = {"divider-instruments", "divider-tables", "divider-orderlist", "divider-instrument-editor"};
+static int savedpanes[NUM_PANES] = {-1, -1, -1, -1};
+
 static double textfactor(int scale)
 {
   return (10 + 2 * (CLAMP(scale, 1, 4) - 1)) / 10.0;
@@ -1366,7 +1372,7 @@ static void loadsettings(void)
   if (g_key_file_load_from_file(keys, path, G_KEY_FILE_NONE, NULL))
   {
     GError *error = NULL;
-    int v = g_key_file_get_integer(keys, "editor", "backup-interval", &error);
+    int c, v = g_key_file_get_integer(keys, "editor", "backup-interval", &error);
     if (!error) settings_backupinterval = CLAMP(v, 0, 3600);
     g_clear_error(&error);
     v = g_key_file_get_boolean(keys, "view", "describe-tables", &error);
@@ -1402,6 +1408,12 @@ static void loadsettings(void)
     v = g_key_file_get_boolean(keys, "window", "maximized", &error);
     if (!error) savedmaximized = v;
     g_clear_error(&error);
+    for (c = 0; c < NUM_PANES; c++)
+    {
+      v = g_key_file_get_integer(keys, "window", panekeys[c], &error);
+      if ((!error) && (v >= 0)) savedpanes[c] = v;
+      g_clear_error(&error);
+    }
     v = g_key_file_get_boolean(keys, "view", "piano", &error);
     if (!error) settings_showpiano = v;
     g_clear_error(&error);
@@ -1442,6 +1454,13 @@ static void savesettings(void)
       g_key_file_set_integer(keys, "window", "text-size", bigwindow);
     }
     g_key_file_set_boolean(keys, "window", "maximized", gtk_window_is_maximized(mainwindow));
+    if (gtk_widget_get_realized(GTK_WIDGET(mainwindow)))
+    {
+      int c;
+
+      for (c = 0; c < NUM_PANES; c++)
+        if (panes[c]) g_key_file_set_integer(keys, "window", panekeys[c], gtk_paned_get_position(GTK_PANED(panes[c])));
+    }
   }
   g_key_file_set_boolean(keys, "view", "sid-registers", settings_showsidstate);
   g_mkdir_with_parents(dir, 0755);
@@ -1563,6 +1582,7 @@ static void onactivate(GtkApplication *application, gpointer data)
   GtkWidget *top = gtk_paned_new(GTK_ORIENTATION_HORIZONTAL);
   GtkWidget *bottom = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
   GtkEventController *controller;
+  int c;
 
   mainwindow = GTK_WINDOW(window);
   adw_style_manager_set_color_scheme(adw_style_manager_get_default(), ADW_COLOR_SCHEME_PREFER_DARK);
@@ -1664,6 +1684,16 @@ static void onactivate(GtkApplication *application, gpointer data)
 
   if (win_fullscreen) gtk_window_fullscreen(mainwindow);
   undo_reset();
+  // Put the dividers back where they were, scaled if the text size differs
+  panes[0] = content;
+  panes[1] = editors;
+  panes[2] = top;
+  panes[3] = panels_instrpaned();
+  for (c = 0; c < NUM_PANES; c++)
+  {
+    if ((panes[c]) && (savedpanes[c] >= 0))
+      gtk_paned_set_position(GTK_PANED(panes[c]), (int)(savedpanes[c] * textfactor(bigwindow) / textfactor(savedtextscale) + 0.5));
+  }
   g_signal_connect(window, "map", G_CALLBACK(onfirstmap), NULL);
   gtk_window_present(mainwindow);
   ui_refresh();
