@@ -14,6 +14,7 @@
 #include "gui.h"
 #include "gundo.h"
 #include "ginfo.h"
+#include "ginput.h"
 
 // gtkui.c: window, toolbar, menus and keyboard routing
 extern GtkWindow *mainwindow;
@@ -100,13 +101,8 @@ void ui_goback(void);
 void ui_playfromhere(void);
 void ui_setdetune(int cents);
 
-// gtkinput.c: polyphonic jam voices (id = what plays the note) and MIDI
-void jam_noteon(unsigned id, int note);
-void jam_noteoff(unsigned id);
-void jam_releaseall(void);
-extern char settings_midiinput[256];
-char **midi_listsources(void);
-int midi_setinput(const char *name);
+// gtkinput.c: MIDI notes (jamming and MIDI itself are in ginput.c)
+void ui_midiinit(void);
 
 // Latin-1 (song data) <-> UTF-8 (GTK) conversion; returns a static buffer
 const char *ui_toutf8(const char *latin1);

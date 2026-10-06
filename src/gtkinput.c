@@ -1,256 +1,43 @@
 //
-// GOATTRACKER v2 GTK user interface: polyphonic jamming and MIDI input
+// GOATTRACKER v2 GTK user interface: MIDI notes
 //
-// In jam mode notes from the keyboard or a MIDI controller are spread over
-// the three channels and released when the key comes up. In edit mode a
-// MIDI note is entered at the pattern cursor like a typed one.
-//
-// MIDI comes from the ALSA sequencer: GoatTracker appears as a client with
-// an input port, connected to the source chosen in Preferences (other
-// sources can be connected with aconnect or a patchbay).
+// In jam mode MIDI notes play on any free channel (ginput.c); in edit mode
+// a MIDI note is entered at the pattern cursor like a typed one.
 //
 
-#include <alsa/asoundlib.h>
-#include <glib-unix.h>
 #include "gtkui.h"
 
-char settings_midiinput[256] = "";
-
-//
-// Jam voices
-//
-
-typedef struct
-{
-  unsigned id;                // what plays it (a key or MIDI note); 0 = free
-  unsigned age;
-} VOICE;
-
-static VOICE voices[MAX_CHN];
-static unsigned agecounter = 0;
-
-void jam_noteon(unsigned id, int note)
-{
-  int c, i, best = -1;
-
-  for (c = 0; c < MAX_CHN; c++)
-    if (voices[c].id == id) return;     // key repeat
-
-  // A free channel, starting from the cursor's; otherwise the oldest note
-  // is cut off. Muted channels are left alone.
-  for (i = 0; (i < MAX_CHN) && (best < 0); i++)
-  {
-    c = (epchn + i) % MAX_CHN;
-    if ((!voices[c].id) && (!chn[c].mute)) best = c;
-  }
-  if (best < 0)
-  {
-    for (c = 0; c < MAX_CHN; c++)
-      if ((!chn[c].mute) && ((best < 0) || (voices[c].age < voices[best].age))) best = c;
-  }
-  if (best < 0) best = epchn;
-
-  voices[best].id = id;
-  voices[best].age = ++agecounter;
-  playtestnote(note, einum, best);
-}
-
-void jam_noteoff(unsigned id)
-{
-  int c;
-
-  for (c = 0; c < MAX_CHN; c++)
-  {
-    if (voices[c].id == id)
-    {
-      releasenote(c);
-      voices[c].id = 0;
-    }
-  }
-}
-
-void jam_releaseall(void)
-{
-  int c;
-
-  for (c = 0; c < MAX_CHN; c++)
-  {
-    if (voices[c].id) releasenote(c);
-    voices[c].id = 0;
-  }
-}
-
-//
-// MIDI input
-//
-
-#define MIDIVOICE(n) (0x10000 | (n))
-
-static snd_seq_t *seq = NULL;
-static int inport = -1;
-static guint watches[8];
-static int numwatches = 0;
 static int lastentered = -1;        // MIDI note last entered in edit mode
 
-static void midinoteon(int midinote)
+static void midinote(int midinote, int velocity)
 {
-  // MIDI note 60 (middle C) is C-4
-  int note = midinote - 12;
+  int note = midi_tonote(midinote);
 
-  if ((note < 0) || (note > LASTNOTE - FIRSTNOTE)) return;
+  if (!velocity)
+  {
+    if (midinote == lastentered)
+    {
+      releasenote(epchn);
+      lastentered = -1;
+    }
+    jam_noteoff(MIDIVOICE(midinote));
+    return;
+  }
+  if (note < 0) return;
   if ((recordmode) && (editmode == EDIT_PATTERN))
   {
     shiftpressed = 0;
     undo_markcursor();
-    pattern_enternote(FIRSTNOTE + note);
+    pattern_enternote(note);
     undo_checkpoint(0);
     lastentered = midinote;
     grid_followcursor();
     ui_refresh();
   }
-  else jam_noteon(MIDIVOICE(midinote), FIRSTNOTE + note);
+  else jam_noteon(MIDIVOICE(midinote), note, einum, epchn);
 }
 
-static void midinoteoff(int midinote)
+void ui_midiinit(void)
 {
-  if (midinote == lastentered)
-  {
-    releasenote(epchn);
-    lastentered = -1;
-  }
-  jam_noteoff(MIDIVOICE(midinote));
-}
-
-static gboolean onmidiready(gint fd, GIOCondition condition, gpointer data)
-{
-  snd_seq_event_t *ev;
-
-  while ((seq) && (snd_seq_event_input(seq, &ev) >= 0))
-  {
-    switch (ev->type)
-    {
-      case SND_SEQ_EVENT_NOTEON:
-      if (ev->data.note.velocity) midinoteon(ev->data.note.note);
-      else midinoteoff(ev->data.note.note);
-      break;
-
-      case SND_SEQ_EVENT_NOTEOFF:
-      midinoteoff(ev->data.note.note);
-      break;
-    }
-  }
-  return G_SOURCE_CONTINUE;
-}
-
-static int midiopen(void)
-{
-  struct pollfd fds[8];
-  int c, n;
-
-  if (seq) return 1;
-  if (snd_seq_open(&seq, "default", SND_SEQ_OPEN_INPUT, SND_SEQ_NONBLOCK) < 0)
-  {
-    seq = NULL;
-    return 0;
-  }
-  snd_seq_set_client_name(seq, "GoatTracker");
-  inport = snd_seq_create_simple_port(seq, "Input", SND_SEQ_PORT_CAP_WRITE | SND_SEQ_PORT_CAP_SUBS_WRITE,
-    SND_SEQ_PORT_TYPE_MIDI_GENERIC | SND_SEQ_PORT_TYPE_APPLICATION);
-  n = snd_seq_poll_descriptors(seq, fds, G_N_ELEMENTS(fds), POLLIN);
-  for (c = 0; c < n; c++)
-    watches[numwatches++] = g_unix_fd_add(fds[c].fd, G_IO_IN, onmidiready, NULL);
-  return 1;
-}
-
-static void midiclose(void)
-{
-  int c;
-
-  for (c = 0; c < numwatches; c++) g_source_remove(watches[c]);
-  numwatches = 0;
-  if (seq) snd_seq_close(seq);
-  seq = NULL;
-  inport = -1;
-  jam_releaseall();
-}
-
-// Call func for each port that MIDI can be read from
-static void foreachsource(snd_seq_t *handle, void (*func)(const char *name, int client, int port, void *data), void *data)
-{
-  snd_seq_client_info_t *cinfo;
-  snd_seq_port_info_t *pinfo;
-  unsigned need = SND_SEQ_PORT_CAP_READ | SND_SEQ_PORT_CAP_SUBS_READ;
-
-  snd_seq_client_info_alloca(&cinfo);
-  snd_seq_port_info_alloca(&pinfo);
-  snd_seq_client_info_set_client(cinfo, -1);
-  while (snd_seq_query_next_client(handle, cinfo) >= 0)
-  {
-    int client = snd_seq_client_info_get_client(cinfo);
-
-    if (client == snd_seq_client_id(handle)) continue;
-    snd_seq_port_info_set_client(pinfo, client);
-    snd_seq_port_info_set_port(pinfo, -1);
-    while (snd_seq_query_next_port(handle, pinfo) >= 0)
-    {
-      unsigned caps = snd_seq_port_info_get_capability(pinfo);
-      char name[256];
-
-      if (((caps & need) != need) || (caps & SND_SEQ_PORT_CAP_NO_EXPORT)) continue;
-      snprintf(name, sizeof name, "%s: %s", snd_seq_client_info_get_name(cinfo), snd_seq_port_info_get_name(pinfo));
-      func(name, client, snd_seq_port_info_get_port(pinfo), data);
-    }
-  }
-}
-
-static void addname(const char *name, int client, int port, void *data)
-{
-  g_ptr_array_add((GPtrArray *)data, g_strdup(name));
-}
-
-// The names of the MIDI sources, as a NULL-terminated array to free with
-// g_strfreev()
-char **midi_listsources(void)
-{
-  GPtrArray *names = g_ptr_array_new();
-  snd_seq_t *handle = seq;
-
-  if ((handle) || (snd_seq_open(&handle, "default", SND_SEQ_OPEN_INPUT, SND_SEQ_NONBLOCK) >= 0))
-  {
-    foreachsource(handle, addname, names);
-    if (handle != seq) snd_seq_close(handle);
-  }
-  g_ptr_array_add(names, NULL);
-  return (char **)g_ptr_array_free(names, FALSE);
-}
-
-typedef struct
-{
-  const char *name;
-  int client, port;
-} FINDSOURCE;
-
-static void findname(const char *name, int client, int port, void *data)
-{
-  FINDSOURCE *f = data;
-
-  if ((f->client < 0) && (!strcmp(name, f->name)))
-  {
-    f->client = client;
-    f->port = port;
-  }
-}
-
-// Read MIDI from the named source ("" = off). Returns 0 if it can't be used.
-int midi_setinput(const char *name)
-{
-  FINDSOURCE f = {name, -1, -1};
-
-  g_strlcpy(settings_midiinput, name, sizeof settings_midiinput);
-  midiclose();
-  if (!name[0]) return 1;
-  if (!midiopen()) return 0;
-  foreachsource(seq, findname, &f);
-  if ((f.client < 0) || (snd_seq_connect_from(seq, inport, f.client, f.port) < 0)) return 0;
-  return 1;
+  midi_sethandler("GoatTracker", midinote);
 }
