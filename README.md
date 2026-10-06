@@ -174,7 +174,7 @@ The keyboard reference (**F12**) is a help window; **Shift+F12** puts the curren
 
 ### Bigger text when you want it
 
-The grids use a scalable monospace font. **View → Larger Text** (or `-w2`…`-w4` on the command line) makes the grids and the piano keyboard bigger, and the window can be any size. The screenshot below is at the third size, the same song as above.
+The grids use a scalable monospace font. **View → Larger Text** (or `-w2`…`-w4` on the command line) makes the grids, the piano keyboard and the SID registers bigger, and the window can be any size. The screenshot below is at the third size, the same song as above.
 
 ![Larger text in a larger window](docs/screenshots/large-text.png)
 
