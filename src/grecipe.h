@@ -85,8 +85,10 @@ int recipe_build(int instrnum, const RECIPE *recipe, const char *name);
 // used on; call after editing the song. Returns 1 if anything changed.
 int recipe_updatefilters(void);
 
-// The voices (bitmask) whose patterns set this instrument
+// The voices (bitmask) whose patterns set this instrument, or every
+// instrument's at once (one pass over the song)
 int recipe_usedvoices(int instrnum);
+void recipe_voicemasks(int masks[MAX_INSTR]);
 
 // Forget an instrument's recipe (it was cleared or replaced)
 void recipe_forget(int instrnum);

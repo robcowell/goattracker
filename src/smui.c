@@ -23,7 +23,6 @@ static GtkWidget *filterbutton;
 static int subtune;
 static int wasplaying;
 static double songseconds = -1;
-static int lengthstale;
 static int quitting;
 
 // Where the song was opened from or last saved (NULL for a new song)
@@ -97,17 +96,30 @@ static void updatetime(void)
   gtk_label_set_text(timelabel, buf);
 }
 
-// Measuring the song stops playback, so it waits until the song is stopped
+// Measuring the song (a silent render) stops playback and resets the
+// voices, cutting off any note being played. So after an edit it waits
+// until nothing has changed for a moment, the song is stopped and no note
+// is held.
+static guint measuretimer;
+
+static void measurenow(void)
+{
+  songseconds = render_songlength(subtune, 15 * 60);
+  updatetime();
+}
+
+static gboolean onmeasuretimer(gpointer data)
+{
+  if ((isplaying()) || (jam_active()) || (roll_busy())) return G_SOURCE_CONTINUE;
+  measuretimer = 0;
+  measurenow();
+  return G_SOURCE_REMOVE;
+}
+
 static void measuresong(void)
 {
-  if (isplaying())
-  {
-    lengthstale = 1;
-    return;
-  }
-  songseconds = render_songlength(subtune, 15 * 60);
-  lengthstale = 0;
-  updatetime();
+  if (measuretimer) g_source_remove(measuretimer);
+  measuretimer = g_timeout_add(1000, onmeasuretimer, NULL);
 }
 
 static void updateplaybutton(void)
@@ -154,6 +166,7 @@ static void updatetitle(void)
 static void updatehealth(void)
 {
   static unsigned char used[MAX_PATT];
+  int masks[MAX_INSTR];
   int s, c, i, patterns = 0, instruments = 0, filtered = 0, first = 0;
   char buf[400];
 
@@ -163,9 +176,10 @@ static void updatehealth(void)
       for (i = 0; i < songlen[s][c]; i++)
         if (songorder[s][c][i] < MAX_PATT) used[songorder[s][c][i]] = 1;
   for (i = 0; i < MAX_PATT; i++) patterns += used[i];
+  recipe_voicemasks(masks);
   for (i = 1; i < MAX_INSTR; i++)
   {
-    int voices = recipe_usedvoices(i);
+    int voices = masks[i];
     if ((voices) || (instr[i].name[0])) instruments++;
     if ((voices) && (instr[i].ptr[FTBL]))
     {
@@ -199,7 +213,10 @@ void sm_songchanged(void)
   arrange_songchanged();
   sm_setstatus("Click a clip to select it, drag it to move it (hold Ctrl to copy), right-click for more.");
   updatehealth();
-  measuresong();
+  if (measuretimer) g_source_remove(measuretimer);
+  measuretimer = 0;
+  if (isplaying()) measuresong();
+  else measurenow();
   updatetime();
   updateplaybutton();
 }
@@ -482,7 +499,6 @@ static gboolean tick(gpointer data)
   roll_tick();
   if (playing || wasplaying) updatetime();
   if (playing != wasplaying) updateplaybutton();
-  if ((!playing) && (lengthstale)) measuresong();
   wasplaying = playing;
   return G_SOURCE_CONTINUE;
 }
@@ -803,6 +819,7 @@ static void onactivate(GtkApplication *application, gpointer data)
     gtk_menu_button_set_popover(GTK_MENU_BUTTON(filterbutton), popover);
     gtk_widget_add_css_class(filterbutton, "flat");
     gtk_widget_add_css_class(filterbutton, "warning");
+    gtk_widget_set_tooltip_text(filterbutton, "More than one instrument uses the filter");
     gtk_widget_set_visible(filterbutton, FALSE);
     gtk_box_append(GTK_BOX(bottom), filterbutton);
   }

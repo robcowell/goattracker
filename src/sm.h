@@ -42,6 +42,7 @@ void roll_noteon(unsigned id, int note);
 void roll_noteoff(unsigned id);
 void roll_releaseall(void);
 void roll_setinstrument(int instrnum);
+int roll_busy(void);
 
 // smexport.c
 void export_audio(void);

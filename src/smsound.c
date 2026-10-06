@@ -140,9 +140,16 @@ static void onpresetactivated(GtkListBox *box, GtkListBoxRow *row, gpointer data
 {
   int p = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(row), "preset"));
 
+  char oldname[MAX_INSTRNAMELEN];
+
   // Each preset tried replaces the last one, and the name follows it
+  memcpy(oldname, instr[librarytarget].name, MAX_INSTRNAMELEN);
   if (recipe_get(librarytarget)) memset(instr[librarytarget].name, 0, MAX_INSTRNAMELEN);
-  if (!build(librarytarget, &presets[p].recipe, presets[p].name, COALESCE_LIBRARY + librarytarget)) return;
+  if (!build(librarytarget, &presets[p].recipe, presets[p].name, COALESCE_LIBRARY + librarytarget))
+  {
+    memcpy(instr[librarytarget].name, oldname, MAX_INSTRNAMELEN);
+    return;
+  }
   current = librarytarget;
   roll_refreshinstruments();
   roll_setinstrument(current);

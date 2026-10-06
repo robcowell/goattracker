@@ -11,6 +11,9 @@ void jam_noteon(unsigned id, int note, int instr, int firstchn);
 void jam_noteoff(unsigned id);
 void jam_releaseall(void);
 
+// Whether any jammed note is held
+int jam_active(void);
+
 // MIDI notes from the ALSA sequencer. The program appears as a client with
 // an input port, connected to the chosen source. The handler is called in
 // the main loop for each note on (velocity > 0) and note off (velocity 0).
