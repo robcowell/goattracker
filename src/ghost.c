@@ -99,3 +99,13 @@ void host_release(int chnum)
 {
   releasenote(chnum);
 }
+
+void host_lock(void)
+{
+  SDL_LockAudio();
+}
+
+void host_unlock(void)
+{
+  SDL_UnlockAudio();
+}
