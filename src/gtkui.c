@@ -463,7 +463,7 @@ static gboolean onkeypressed(GtkEventControllerKey *controller, guint keyval, gu
 
     if (note >= 0)
     {
-      jam_noteon(raw, note);
+      jam_noteon(raw, note, einum, epchn);
       return TRUE;
     }
   }
@@ -1464,7 +1464,7 @@ static void savesettings(void)
   g_key_file_set_boolean(keys, "view", "describe-tables", settings_decodetables);
   g_key_file_set_integer(keys, "sound", "volume", mastervolume);
   g_key_file_set_integer(keys, "sound", "detune", sid_detune);
-  g_key_file_set_string(keys, "sound", "midi-input", settings_midiinput);
+  g_key_file_set_string(keys, "sound", "midi-input", midi_inputname);
   g_key_file_set_boolean(keys, "editor", "auto-next-pattern", autonextpattern);
   g_key_file_set_boolean(keys, "export", "patterns-in-play-order", packplayorder);
   g_key_file_set_boolean(keys, "view", "piano", settings_showpiano);
@@ -1615,6 +1615,7 @@ static void onactivate(GtkApplication *application, gpointer data)
   mainwindow = GTK_WINDOW(window);
   adw_style_manager_set_color_scheme(adw_style_manager_get_default(), ADW_COLOR_SCHEME_PREFER_DARK);
   gtk_window_set_title(mainwindow, "GoatTracker");
+  ui_midiinit();
   loadsettings();
   setdefaultsize();
   addactions();
