@@ -102,7 +102,7 @@ Closing the window, quitting or opening another song asks first, and **Save…**
 
 - **Ctrl+S** saves over the current file from anywhere; **Save Song As…** (F11) asks for a name.
 - **Automatic backups**: every 30 seconds a changed song is copied to `~/.goattrk/backups/`, with a timestamp in the name. The newest 20 per song are kept. The interval is set in Preferences, which also has a button to open the folder.
-- **Damaged files are refused safely.** The stock loader trusts every length in a `.sng` file, so a truncated file, or a 6-channel song from GoatTracker Stereo or Ultra, could crash it. Files are now checked first and the current song is left untouched.
+- **Damaged files are refused safely.** The stock loader trusts every length in a `.sng` file, so a truncated or crafted file (including songs in the old GoatTracker 1.x and early 2.x formats), or a 6-channel song from GoatTracker Stereo or Ultra, could crash it. Files are now checked first and the current song is left untouched.
 - **Drag and drop** a `.sng` onto the window to open it, or an `.ins` to load it into the current instrument.
 - **Merging** tells you when the song runs out of subtunes, instruments, table rows or patterns part way, instead of stopping silently. Ctrl+Z undoes the partial merge.
 

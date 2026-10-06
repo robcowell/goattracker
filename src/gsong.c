@@ -265,12 +265,66 @@ static void readsongchunks(FILE *handle, int instrcount)
   }
 }
 
-// Check that a GTS3-GTS5 song file (positioned after its ident) fits the
+// Song files are read into memory once, and both the checks below and the
+// load itself read that copy. A file that changes while it is being loaded
+// (on a network or FUSE mount, say) therefore can't slip counts past the
+// checks. No real song comes near the size limit.
+#define MAX_SONGFILESIZE (1024 * 1024)
+
+static FILE *opensongfile(const char *name, unsigned char **data, int *damaged)
+{
+  FILE *file = fopen(name, "rb");
+  FILE *mem = NULL;
+  long size;
+
+  *data = NULL;
+  *damaged = 0;
+  if (!file) return NULL;
+  if ((!fseek(file, 0, SEEK_END)) && ((size = ftell(file)) > 0) && (size <= MAX_SONGFILESIZE) &&
+    (!fseek(file, 0, SEEK_SET)))
+  {
+    *data = malloc(size);
+    if ((*data) && (fread(*data, size, 1, file) == 1)) mem = fmemopen(*data, size, "rb");
+  }
+  fclose(file);
+  if (!mem)
+  {
+    free(*data);
+    *data = NULL;
+    *damaged = 1;
+  }
+  return mem;
+}
+
+static void closesongfile(FILE *handle, unsigned char *data)
+{
+  if (handle) fclose(handle);
+  free(data);
+}
+
+// Move forward over n bytes of song data. Running past the end of the file
+// is an error only when strict: a legacy song cut short inside its data
+// loads as far as it goes, as it always has.
+static int skipbytes(FILE *handle, long n, long size, int strict)
+{
+  long pos = ftell(handle) + n;
+
+  if (pos > size)
+  {
+    if (strict) return 0;
+    pos = size;
+  }
+  return !fseek(handle, pos, SEEK_SET);
+}
+
+// Check that a GTS2-GTS5 song file (positioned after its ident) fits the
 // editor's limits when read with the given number of orderlists per
-// subtune, without changing any song data. Stock GoatTracker trusts these
-// counts, so a damaged file or a 6-channel GoatTracker Stereo song would
-// overwrite memory.
-static int validatesongfile(FILE *handle, int channels)
+// subtune and tables, without changing any song data. Stock GoatTracker
+// trusts these counts, so a damaged file or a 6-channel GoatTracker Stereo
+// song would overwrite memory. checkend also requires the song to end
+// where the file does (or at a GoatTracker Ultra chunk), as GTS3-GTS5
+// files always have; GTS2 files are held only to their counts.
+static int validatesongfile(FILE *handle, int channels, int tables, int checkend)
 {
   long start = ftell(handle);
   long size, end;
@@ -279,7 +333,7 @@ static int validatesongfile(FILE *handle, int channels)
   fseek(handle, 0, SEEK_END);
   size = ftell(handle);
   fseek(handle, start, SEEK_SET);
-  if (fseek(handle, 3 * MAX_STR, SEEK_CUR)) goto DONE;
+  if (!skipbytes(handle, 3 * MAX_STR, size, checkend)) goto DONE;
 
   amount = fgetc(handle);
   if ((amount < 0) || (amount > MAX_SONGS)) goto DONE;
@@ -289,19 +343,19 @@ static int validatesongfile(FILE *handle, int channels)
     {
       length = fgetc(handle);
       if ((length < 0) || (length + 1 > MAX_SONGLEN + 2)) goto DONE;
-      if (fseek(handle, length + 1, SEEK_CUR)) goto DONE;
+      if (!skipbytes(handle, length + 1, size, checkend)) goto DONE;
     }
   }
 
   amount = fgetc(handle);
   if ((amount < 0) || (amount >= MAX_INSTR)) goto DONE;
-  if (fseek(handle, amount * (9 + MAX_INSTRNAMELEN), SEEK_CUR)) goto DONE;
+  if (!skipbytes(handle, amount * (9 + MAX_INSTRNAMELEN), size, checkend)) goto DONE;
 
-  for (c = 0; c < MAX_TABLES; c++)
+  for (c = 0; c < tables; c++)
   {
     length = fgetc(handle);
     if ((length < 0) || (length > MAX_TABLELEN)) goto DONE;
-    if (fseek(handle, length * 2, SEEK_CUR)) goto DONE;
+    if (!skipbytes(handle, length * 2, size, checkend)) goto DONE;
   }
 
   amount = fgetc(handle);
@@ -310,17 +364,64 @@ static int validatesongfile(FILE *handle, int channels)
   {
     length = fgetc(handle);
     if ((length < 0) || (length * 4 > MAX_PATTROWS * 4 + 4)) goto DONE;
-    if (fseek(handle, length * 4, SEEK_CUR)) goto DONE;
+    if (!skipbytes(handle, length * 4, size, checkend)) goto DONE;
   }
-  // The structure must end inside the file, either exactly at its end or
-  // at one of the chunks GoatTracker Ultra appends
-  end = ftell(handle);
-  if (end > size) goto DONE;
-  if (end < size)
+  if (checkend)
   {
-    next = fgetc(handle);
-    if ((next != CHUNK_EDITORINFO) && (next != CHUNK_INSTRPAN) && (next != CHUNK_SIDTRACKER64)) goto DONE;
+    // The structure must end inside the file, either exactly at its end or
+    // at one of the chunks GoatTracker Ultra appends
+    end = ftell(handle);
+    if (end > size) goto DONE;
+    if (end < size)
+    {
+      next = fgetc(handle);
+      if ((next != CHUNK_EDITORINFO) && (next != CHUNK_INSTRPAN) && (next != CHUNK_SIDTRACKER64)) goto DONE;
+    }
   }
+  ok = 1;
+
+  DONE:
+  fseek(handle, start, SEEK_SET);
+  return ok;
+}
+
+// The same for a GoatTracker 1.x (GTS!) song. Its subtune and pattern
+// counts index the same arrays as in later versions; everything else it
+// holds is converted with bounds of its own.
+static int validatev1songfile(FILE *handle)
+{
+  long start = ftell(handle);
+  long size;
+  int c, d, amount, length, ok = 0;
+
+  fseek(handle, 0, SEEK_END);
+  size = ftell(handle);
+  fseek(handle, start, SEEK_SET);
+  if (!skipbytes(handle, 3 * MAX_STR, size, 0)) goto DONE;
+
+  amount = fgetc(handle);
+  if ((amount < 0) || (amount > MAX_SONGS)) goto DONE;
+  for (d = 0; d < amount; d++)
+  {
+    for (c = 0; c < MAX_CHN; c++)
+    {
+      length = fgetc(handle);
+      if (length < 0) goto DONE;
+      if (!skipbytes(handle, length + 1, size, 0)) goto DONE;
+    }
+  }
+
+  // 31 instruments: 7 bytes, the wavetable length, the name, the wavetable
+  for (c = 1; c < 32; c++)
+  {
+    if (!skipbytes(handle, 7, size, 0)) goto DONE;
+    length = fgetc(handle);
+    if (length < 0) goto DONE;
+    if (!skipbytes(handle, MAX_INSTRNAMELEN + (length / 2) * 2, size, 0)) goto DONE;
+  }
+
+  amount = fgetc(handle);
+  if ((amount < 0) || (amount > MAX_PATT)) goto DONE;
   ok = 1;
 
   DONE:
@@ -331,8 +432,8 @@ static int validatesongfile(FILE *handle, int channels)
 // Validation result for a load: the song is left unchanged if it fails
 static int checksongfile(FILE *handle)
 {
-  if (validatesongfile(handle, MAX_CHN)) return LOAD_OK;
-  return validatesongfile(handle, 6) ? LOAD_MULTICHANNEL : LOAD_DAMAGED;
+  if (validatesongfile(handle, MAX_CHN, MAX_TABLES, 1)) return LOAD_OK;
+  return validatesongfile(handle, 6, MAX_TABLES, 1) ? LOAD_MULTICHANNEL : LOAD_DAMAGED;
 }
 
 // Pattern instrument numbers index arrays of MAX_INSTR entries (instr[], and
@@ -356,10 +457,13 @@ void loadsong(void)
   int ok = 0;
   char ident[4];
   FILE *handle;
+  unsigned char *filedata;
+  int damaged;
   int instrcount = 0;
 
   loadresult = LOAD_OK;
-  handle = fopen(songfilename, "rb");
+  handle = opensongfile(songfilename, &filedata, &damaged);
+  if (damaged) loadresult = LOAD_DAMAGED;
 
   if (handle)
   {
@@ -374,7 +478,7 @@ void loadsong(void)
       loadresult = checksongfile(handle);
       if (loadresult != LOAD_OK)
       {
-        fclose(handle);
+        closesongfile(handle, filedata);
         return;
       }
       clearsong(1,1,1,1,1);
@@ -440,6 +544,13 @@ void loadsong(void)
       int length;
       int amount;
       int loadsize;
+
+      if (!validatesongfile(handle, MAX_CHN, MAX_TABLES-1, 0))
+      {
+        loadresult = LOAD_DAMAGED;
+        closesongfile(handle, filedata);
+        return;
+      }
       clearsong(1,1,1,1,1);
       ok = 1;
 
@@ -490,8 +601,8 @@ void loadsong(void)
         length = fread8(handle) * 4;
         fread(pattern[c], length, 1, handle);
 
-        // Convert speedtable-requiring commands
-        for (d = 0; d < length; d++)
+        // Convert speedtable-requiring commands (length is in bytes, 4 per row)
+        for (d = 0; d < length / 4; d++)
         {
           switch (pattern[c][d*4+2])
           {
@@ -528,11 +639,18 @@ void loadsong(void)
       int fi = 0;
       int numfilter = 0;
       unsigned char filtertable[256];
-      unsigned char filtermap[64];
+      unsigned char filtermap[256];       // indexed by file bytes; steps above 63 map to 0
       int arpmap[32][256];
       unsigned char pulse[32], pulseadd[32], pulselimitlow[32], pulselimithigh[32];
       int filterjumppos[64];
 
+      if (!validatev1songfile(handle))
+      {
+        loadresult = LOAD_DAMAGED;
+        closesongfile(handle, filedata);
+        return;
+      }
+      memset(filtermap, 0, sizeof filtermap);
       clearsong(1,1,1,1,1);
       ok = 1;
 
@@ -921,7 +1039,7 @@ void loadsong(void)
                   arpstart = fw + 1;
                   if (instr[i].ptr[WTBL])
                   {
-                    for (e = instr[i].ptr[WTBL]-1;; e++)
+                    for (e = instr[i].ptr[WTBL]-1; e < MAX_TABLELEN; e++)
                     {
                       if (ltable[WTBL][e] == 0xff) break;
                       if (fw < MAX_TABLELEN)
@@ -993,7 +1111,7 @@ void loadsong(void)
         }
       }
     }
-    fclose(handle);
+    closesongfile(handle, filedata);
   }
   if (ok)
   {
@@ -1774,6 +1892,8 @@ void mergesong(void)
   int c;
   char ident[4];
   FILE *handle;
+  unsigned char *filedata;
+  int damaged;
   int songbase;
   int pattbase;
   int instrbase;
@@ -1813,7 +1933,8 @@ void mergesong(void)
     tablebase[c] = gettablelen(c);
   }
 
-  handle = fopen(songfilename, "rb");
+  handle = opensongfile(songfilename, &filedata, &damaged);
+  if (damaged) mergeresult = MERGE_BADFILE;
 
   if (handle)
   {
@@ -1949,7 +2070,7 @@ void mergesong(void)
   }
 
   ABORT:
-  if (handle) fclose(handle);
+  closesongfile(handle, filedata);
   maskpatterninstruments();
   countpatternlengths();
   songchange();

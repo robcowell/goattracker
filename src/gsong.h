@@ -9,7 +9,7 @@
 #define MERGE_NOPATTERNS 4
 #define MERGE_BADFILE 5
 
-// Outcome of loadsong() for GTS3-GTS5 files that fail validation
+// Outcome of loadsong() for song files that fail validation (any version)
 #define LOAD_OK 0
 #define LOAD_DAMAGED 1
 #define LOAD_MULTICHANNEL 2
