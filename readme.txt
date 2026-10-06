@@ -77,6 +77,7 @@ Table of contents
 6.1.4 Tables
 6.1.5 Patterns header
 6.1.6 Patterns
+6.1.7 Trailing chunks
 6.2 GoatTracker v2 instrument (.INS) format
 6.3 Sound effect data format
 
@@ -1432,6 +1433,30 @@ Offset  Size    Description
                 2nd byte: Instrument number ($00-$3F)
                 3rd byte: Command ($00-$0F)
                 4th byte: Command databyte
+
+6.1.7 Trailing chunks
+---------------------
+
+After the patterns, songs saved by this edition carry chunks that older
+versions never read. Each starts with an identifier byte; a reader stops at
+the first identifier it doesn't know, so new chunks go last.
+
+$1F     GoatTracker Ultra editor settings: finevibrato, pulse optimization,
+        realtime optimization, NTSC, SID model (bytes), hardrestart ADSR,
+        speed multiplier, channel count (32-bit little-endian), stereo mode
+        (byte)
+$9A     GoatTracker Ultra instrument panning, one byte per instrument
+$9B     SIDTracker64 song flag (byte)
+$C5     SidMonkey instrument recipes:
+        +0      byte    Version (1)
+        +1      byte    Number of recipes n
+        Then n times:
+        +0      byte    Instrument number
+        +1      byte    Recipe size m
+        +2      m bytes Recipe (see grecipe.h)
+        +2+m    4 bytes Checksum of the instrument and table programs built
+                        from it (little-endian). An instrument that no longer
+                        matches has been changed since and has no recipe.
 
 6.2 GoatTracker v2 instrument (.INS) format
 -------------------------------------------

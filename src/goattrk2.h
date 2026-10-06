@@ -25,6 +25,7 @@
 #include "gtable.h"
 #include "ghelp.h"
 #include "grender.h"
+#include "grecipe.h"
 
 #define EDIT_PATTERN 0
 #define EDIT_ORDERLIST 1
