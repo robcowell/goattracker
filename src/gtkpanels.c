@@ -104,6 +104,30 @@ static int onhexinput(GtkSpinButton *spin, double *value, gpointer data)
   return TRUE;
 }
 
+// The mouse wheel scrolls the panel a field is in instead of changing the
+// field's value, so scrolling the instrument editor can't edit it by accident
+static gboolean onfieldscroll(GtkEventControllerScroll *controller, double dx, double dy, gpointer data)
+{
+  GtkWidget *widget = gtk_event_controller_get_widget(GTK_EVENT_CONTROLLER(controller));
+  GtkWidget *scroll = gtk_widget_get_ancestor(widget, GTK_TYPE_SCROLLED_WINDOW);
+
+  if (scroll)
+  {
+    GtkAdjustment *adj = gtk_scrolled_window_get_vadjustment(GTK_SCROLLED_WINDOW(scroll));
+    gtk_adjustment_set_value(adj, gtk_adjustment_get_value(adj) + dy * 40);
+  }
+  return TRUE;
+}
+
+static void wheelscrollspanel(GtkWidget *widget)
+{
+  GtkEventController *controller = gtk_event_controller_scroll_new(GTK_EVENT_CONTROLLER_SCROLL_VERTICAL);
+
+  gtk_event_controller_set_propagation_phase(controller, GTK_PHASE_CAPTURE);
+  g_signal_connect(controller, "scroll", G_CALLBACK(onfieldscroll), NULL);
+  gtk_widget_add_controller(widget, controller);
+}
+
 GtkWidget *hexspin_new(int max, int digits)
 {
   GtkWidget *spin = gtk_spin_button_new_with_range(0, max, 1);
@@ -114,6 +138,140 @@ GtkWidget *hexspin_new(int max, int digits)
   g_signal_connect(spin, "output", G_CALLBACK(onhexoutput), GINT_TO_POINTER(digits));
   g_signal_connect(spin, "input", G_CALLBACK(onhexinput), NULL);
   return spin;
+}
+
+//
+// Waveform editor: the SID waveform register as toggle buttons
+//
+
+typedef struct
+{
+  unsigned char *value;
+  int wavetable;
+  int coalesce;
+  int updating;
+  GtkWidget *toggles[8];
+  GtkWidget *label;
+} WAVEEDIT;
+
+static const struct
+{
+  const char *name;
+  unsigned char bit;
+  const char *tooltip;
+} wavebits[8] = {
+  {"Noise", 0x80, NULL},
+  {"Pulse", 0x40, NULL},
+  {"Saw", 0x20, NULL},
+  {"Triangle", 0x10, NULL},
+  {"Test", 0x08, "Holds the oscillator at zero (used for hard restart)"},
+  {"Ring", 0x04, "Ring modulation by the previous channel (with triangle)"},
+  {"Sync", 0x02, "Hard sync to the previous channel"},
+  {"Gate", 0x01, "Starts the envelope's attack; clearing it starts the release"}
+};
+
+static void wavesync(WAVEEDIT *w)
+{
+  unsigned char v = *w->value;
+  char buf[64];
+  int c;
+
+  // In the wavetable E0-EF are waveforms with all waves off
+  if ((w->wavetable) && (v >= WAVESILENT)) v &= 0x0f;
+  w->updating = 1;
+  for (c = 0; c < 8; c++)
+    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(w->toggles[c]), (v & wavebits[c].bit) != 0);
+  w->updating = 0;
+  if ((!w->wavetable) && (!*w->value)) snprintf(buf, sizeof buf, "$00: no change on the first frame");
+  else if ((w->wavetable) && (!*w->value)) snprintf(buf, sizeof buf, "$00: waveform unchanged");
+  else if ((w->wavetable) && (*w->value >= WAVESILENT)) snprintf(buf, sizeof buf, "$%02X: no waveform (silent)", *w->value);
+  else snprintf(buf, sizeof buf, "$%02X", *w->value);
+  gtk_label_set_text(GTK_LABEL(w->label), buf);
+}
+
+static void onwavetoggled(GtkToggleButton *button, WAVEEDIT *w)
+{
+  unsigned char v = 0;
+  int c;
+
+  if (w->updating) return;
+  for (c = 0; c < 8; c++)
+    if (gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(w->toggles[c]))) v |= wavebits[c].bit;
+
+  if (w->wavetable)
+  {
+    // E0-FF mean silent waveforms and commands in the wavetable, so no
+    // waves is written as E0-EF and noise+pulse+saw isn't possible
+    if (!(v & 0xf0)) v |= WAVESILENT;
+    else if ((v & 0xf0) >= WAVESILENT)
+    {
+      ui_toast("Noise, pulse and saw can't be combined in the wavetable");
+      wavesync(w);
+      return;
+    }
+  }
+  else if (v >= 0xfe)
+  {
+    ui_toast("$FE and $FF are reserved for gate off and on");
+    wavesync(w);
+    return;
+  }
+
+  *w->value = v;
+  undo_checkpoint(w->coalesce);
+  ui_edited();
+  ui_refresh();
+  wavesync(w);
+}
+
+static gboolean unparentpopover(gpointer data)
+{
+  gtk_widget_unparent(GTK_WIDGET(data));
+  return G_SOURCE_REMOVE;
+}
+
+static void onwaveclosed(GtkPopover *popover, gpointer data)
+{
+  g_idle_add(unparentpopover, popover);
+}
+
+void ui_waveformeditor(GtkWidget *parent, const GdkRectangle *where, unsigned char *value, int wavetable, int coalesce)
+{
+  GtkWidget *popover = gtk_popover_new();
+  GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
+  GtkWidget *row = NULL;
+  WAVEEDIT *w = g_new0(WAVEEDIT, 1);
+  int c;
+
+  w->value = value;
+  w->wavetable = wavetable;
+  w->coalesce = coalesce;
+  for (c = 0; c < 8; c++)
+  {
+    if (!(c & 3))
+    {
+      row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+      gtk_widget_add_css_class(row, "linked");
+      gtk_box_set_homogeneous(GTK_BOX(row), TRUE);
+      gtk_box_append(GTK_BOX(box), row);
+    }
+    w->toggles[c] = gtk_toggle_button_new_with_label(wavebits[c].name);
+    if (wavebits[c].tooltip) gtk_widget_set_tooltip_text(w->toggles[c], wavebits[c].tooltip);
+    g_signal_connect(w->toggles[c], "toggled", G_CALLBACK(onwavetoggled), w);
+    gtk_box_append(GTK_BOX(row), w->toggles[c]);
+  }
+  w->label = gtk_label_new(NULL);
+  gtk_widget_add_css_class(w->label, "dim-label");
+  gtk_widget_add_css_class(w->label, "monospace");
+  gtk_box_append(GTK_BOX(box), w->label);
+  wavesync(w);
+
+  gtk_popover_set_child(GTK_POPOVER(popover), box);
+  g_object_set_data_full(G_OBJECT(popover), "waveedit", w, g_free);
+  g_signal_connect(popover, "closed", G_CALLBACK(onwaveclosed), NULL);
+  gtk_widget_set_parent(popover, parent);
+  if (where) gtk_popover_set_pointing_to(GTK_POPOVER(popover), where);
+  gtk_popover_popup(GTK_POPOVER(popover));
 }
 
 //
@@ -167,6 +325,7 @@ static void ongototable(GtkButton *button, gpointer data)
     pos = gettablelen(t);
     if (pos >= MAX_TABLELEN - 1) pos = MAX_TABLELEN - 1;
   }
+  ui_pushplace();
   gototable(t, pos);
   ui_focuseditmode();
   ui_refresh();
@@ -241,6 +400,7 @@ static GtkWidget *fieldspin(int field, int max, int digits)
   GtkWidget *spin = hexspin_new(max, digits);
 
   fieldspins[field] = spin;
+  wheelscrollspanel(spin);
   g_signal_connect(spin, "value-changed", G_CALLBACK(onfieldchanged), GINT_TO_POINTER(field));
   return spin;
 }
@@ -253,6 +413,12 @@ static GtkWidget *tablebutton(int table)
   gtk_widget_set_tooltip_text(button, "Go to the table data");
   g_signal_connect(button, "clicked", G_CALLBACK(ongototable), GINT_TO_POINTER(table));
   return button;
+}
+
+static void onfirstwave(GtkButton *button, gpointer data)
+{
+  if (!einum) return;
+  ui_waveformeditor(GTK_WIDGET(button), NULL, &instr[einum].firstwave, 0, KEY_INSTRFIELD(F_FIRSTWAVE));
 }
 
 static GtkWidget *iconbutton(const char *icon, const char *tooltip, unsigned rawkey)
@@ -295,6 +461,7 @@ GtkWidget *panel_instruments_new(void)
   GtkWidget *editorscroll = gtk_scrolled_window_new();
   GtkWidget *grid = gtk_grid_new();
   GtkWidget *test = gtk_button_new_with_label("Test Note");
+  GtkWidget *wavebutton;
   GtkGesture *gesture;
   int c, row = 0;
 
@@ -362,6 +529,7 @@ GtkWidget *panel_instruments_new(void)
   for (c = 0; c < 4; c++)
   {
     adsrscales[c] = gtk_scale_new_with_range(GTK_ORIENTATION_HORIZONTAL, 0, 15, 1);
+    wheelscrollspanel(adsrscales[c]);
     gtk_scale_set_draw_value(GTK_SCALE(adsrscales[c]), TRUE);
     gtk_scale_set_value_pos(GTK_SCALE(adsrscales[c]), GTK_POS_RIGHT);
     gtk_scale_set_format_value_func(GTK_SCALE(adsrscales[c]), formathexnybble, NULL, NULL);
@@ -375,6 +543,10 @@ GtkWidget *panel_instruments_new(void)
   gtk_drawing_area_set_draw_func(GTK_DRAWING_AREA(envelopearea), drawenvelope, NULL, NULL);
   gtk_grid_attach(GTK_GRID(grid), envelopearea, 0, row++, 3, 1);
 
+  wavebutton = gtk_button_new_from_icon_name("document-edit-symbolic");
+  gtk_widget_add_css_class(wavebutton, "flat");
+  gtk_widget_set_tooltip_text(wavebutton, "Choose the waveform bits");
+  g_signal_connect(wavebutton, "clicked", G_CALLBACK(onfirstwave), NULL);
   addrow(grid, row++, "Wavetable", "Wavetable start position (0 = none)", fieldspin(F_WAVEPTR, 255, 2), tablebutton(WTBL));
   addrow(grid, row++, "Pulsetable", "Pulsetable start position (0 = none)", fieldspin(F_PULSEPTR, 255, 2), tablebutton(PTBL));
   addrow(grid, row++, "Filtertable", "Filtertable start position (0 = none)", fieldspin(F_FILTERPTR, 255, 2), tablebutton(FTBL));
@@ -383,7 +555,7 @@ GtkWidget *panel_instruments_new(void)
   addrow(grid, row++, "HR / gate timer", "Frames before the note to do gateoff and hard restart. "
     "$80 disables hard restart, $40 disables gateoff.", fieldspin(F_GATETIMER, 255, 2), NULL);
   addrow(grid, row++, "1st frame wave", "Waveform on the first frame of a note ($00 = no change, "
-    "$FE/$FF = gate off/on without waveform change)", fieldspin(F_FIRSTWAVE, 255, 2), NULL);
+    "$FE/$FF = gate off/on without waveform change)", fieldspin(F_FIRSTWAVE, 255, 2), wavebutton);
   gtk_box_append(GTK_BOX(instreditor), grid);
 
   gesture = gtk_gesture_click_new();

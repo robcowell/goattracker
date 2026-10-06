@@ -53,8 +53,29 @@ static PangoFontDescription *fontdesc = NULL;
 // Orderlist layout
 #define ORD_ROWNUMW 4
 #define ORD_CHWIDTH 5
-// Table layout
+// Table layout. With decoded tables the wave, pulse and filter tables get a
+// column describing their rows.
 #define TBL_WIDTH 10
+#define TBL_DECODEW 15
+
+static int decoded(int table)
+{
+  return (settings_decodetables) && (table != STBL);
+}
+
+static int tblwidth(int table)
+{
+  return TBL_WIDTH + (decoded(table) ? TBL_DECODEW : 0);
+}
+
+// Where table starts, in characters
+static int tblstart(int table)
+{
+  int c, x = 0;
+
+  for (c = 0; c < table; c++) x += tblwidth(c) + 1;
+  return x;
+}
 
 static const char *tablenames[] = {"Wave", "Pulse", "Filter", "Speed"};
 
@@ -98,8 +119,14 @@ static void updatesizes(void)
   updatefont(patterngrid);
   gtk_drawing_area_set_content_width(GTK_DRAWING_AREA(patterngrid), (PATT_ROWNUMW + MAX_CHN * PATT_CHWIDTH + 1) * cellw);
   gtk_drawing_area_set_content_width(GTK_DRAWING_AREA(ordergrid), (ORD_ROWNUMW + MAX_CHN * ORD_CHWIDTH + 1) * cellw);
-  gtk_drawing_area_set_content_width(GTK_DRAWING_AREA(tablegrid), (MAX_TABLES * (TBL_WIDTH + 1) + 1) * cellw);
+  gtk_drawing_area_set_content_width(GTK_DRAWING_AREA(tablegrid), (tblstart(MAX_TABLES) + 1) * cellw);
   gtk_drawing_area_set_content_height(GTK_DRAWING_AREA(tablegrid), headerheight() + 8 * cellh);
+}
+
+void grid_relayout(void)
+{
+  updatesizes();
+  grid_redraw();
 }
 
 void grid_setfontscale(int scale)
@@ -404,7 +431,7 @@ static void drawtables(GtkDrawingArea *area, cairo_t *cr, int width, int height,
   int x0 = cellw / 2;
   int rows = tablerows(height);
   int c, d;
-  char buf[16];
+  char buf[64];
 
   // After keyboard movement, keep the edit row visible even when the pane
   // shows fewer rows than the engine assumes
@@ -419,7 +446,7 @@ static void drawtables(GtkDrawingArea *area, cairo_t *cr, int width, int height,
 
   for (c = 0; c < MAX_TABLES; c++)
   {
-    int x = x0 + c * (TBL_WIDTH + 1) * cellw;
+    int x = x0 + tblstart(c) * cellw;
     int instrstart = instr[einum].ptr[c] - 1;
 
     if (c) fill(cr, x - cellw, headerheight(), 1, height, col_separator);
@@ -429,14 +456,15 @@ static void drawtables(GtkDrawingArea *area, cairo_t *cr, int width, int height,
       int p = etview[c] + d;
       int y = headerheight() + d * cellh;
       unsigned char l, r;
-      RGB lcol = col_note, rcol = col_data;
+      RGB lcol = col_note, rcol = col_data, dcol = col_rownumhighlight;
+      int jump;
 
       if (p >= MAX_TABLELEN) break;
       l = ltable[c][p];
       r = rtable[c][p];
 
       if ((c == etnum) && (p == etpos))
-        fill(cr, x - cellw / 2, y, TBL_WIDTH * cellw, cellh, col_cursorrow);
+        fill(cr, x - cellw / 2, y, tblwidth(c) * cellw, cellh, col_cursorrow);
       if ((c == etmarknum) && (inmark(p, etmarkstart, etmarkend)))
         fill(cr, x + 3 * cellw - cellw / 2, y, 6 * cellw, cellh, col_mark);
       // Where the current instrument's pointer into this table starts
@@ -459,12 +487,23 @@ static void drawtables(GtkDrawingArea *area, cairo_t *cr, int width, int height,
         if ((l >= 0x80) || ((!l) && (r))) lcol = col_cmd;
         break;
       }
-      if ((c != STBL) && (l == 0xff)) lcol = col_special;
+      jump = (c != STBL) && (l == 0xff);
+      if (jump) lcol = dcol = col_special;
       if ((!l) && (!r))
       {
         lcol = col_empty;
         rcol = col_empty;
       }
+      // Rows that nothing can ever execute are dimmed
+      else if (!table_isreachable(c, p))
+      {
+        lcol = dim(lcol);
+        rcol = dim(rcol);
+        dcol = dim(dcol);
+      }
+      // A jump or stop ends a run of rows
+      if (jump)
+        fill(cr, x - cellw / 2, y + cellh - 1, tblwidth(c) * cellw, 1, col_rownum);
 
       sprintf(buf, "%02X", p + 1);
       text(cr, layout, x, y, col_rownum, buf);
@@ -472,12 +511,18 @@ static void drawtables(GtkDrawingArea *area, cairo_t *cr, int width, int height,
       text(cr, layout, x + 3 * cellw, y, lcol, buf);
       sprintf(buf, "%02X", r);
       text(cr, layout, x + 6 * cellw, y, rcol, buf);
+      if ((decoded(c)) && ((l) || (r)))
+      {
+        table_describe(c, p, buf, sizeof buf, 1);
+        buf[TBL_DECODEW - 1] = 0;
+        text(cr, layout, x + TBL_WIDTH * cellw, y, dcol, buf);
+      }
     }
   }
 
   drawheader(cr, width, focused);
   for (c = 0; c < MAX_TABLES; c++)
-    text(cr, layout, x0 + c * (TBL_WIDTH + 1) * cellw, 4, (c == etnum) ? col_instr : col_headertext, tablenames[c]);
+    text(cr, layout, x0 + tblstart(c) * cellw, 4, (c == etnum) ? col_instr : col_headertext, tablenames[c]);
   if (!etlock)
     text(cr, layout, width - 9 * cellw, 4, col_cmd, "Unlocked");
   g_object_unref(layout);
@@ -491,6 +536,8 @@ static void drawtables(GtkDrawingArea *area, cairo_t *cr, int width, int height,
 
 // A context menu command is a classic key, run as if it had been typed
 #define GRIDKEY(raw, shift, ascii) ((guint32)(raw) | ((guint32)(shift) << 16) | ((guint32)(ascii) << 24))
+// ...or one of these, which have no key
+#define GRID_EDITWAVEFORM GRIDKEY(0xffff, 0, 0)
 
 typedef struct GRIDITEM
 {
@@ -726,10 +773,12 @@ static void marktable(int c, int start, int end)
 static int tableat(double x, int *column)
 {
   int col = columnat(x);
-  int c = col / (TBL_WIDTH + 1);
-  int offset = col - c * (TBL_WIDTH + 1);
+  int c, offset;
 
-  if ((col < 0) || (c >= MAX_TABLES)) return -1;
+  if (col < 0) return -1;
+  for (c = 0; (c < MAX_TABLES) && (col >= tblstart(c + 1)); c++);
+  if (c >= MAX_TABLES) return -1;
+  offset = col - tblstart(c);
   if (column)
   {
     if (offset <= 3) *column = 0;
@@ -908,13 +957,28 @@ static gboolean onscroll(GtkEventControllerScroll *controller, double dx, double
   return TRUE;
 }
 
+static void editwaveform(void)
+{
+  unsigned char l = ltable[WTBL][etpos];
+  int y = headerheight() + (etpos - etview[WTBL]) * cellh;
+  GdkRectangle where = {cellw / 2 + 3 * cellw, y, 2 * cellw, cellh};
+
+  if ((etnum != WTBL) || ((l) && (l < 0x10)) || (l >= WAVECMD))
+  {
+    ui_toast("Waveforms are set on wavetable rows with a left value of 00 or 10–EF");
+    return;
+  }
+  ui_waveformeditor(tablegrid, &where, &ltable[WTBL][etpos], 1, (4 << 16) | etpos);
+}
+
 static void ongridkey(GSimpleAction *action, GVariant *parameter, GRID *g)
 {
   guint32 key = g_variant_get_uint32(parameter);
 
   editmode = g->mode;
   gtk_widget_grab_focus(g->area);
-  ui_runkey(key & 0xffff, key >> 24, (key >> 16) & 1);
+  if (key == GRID_EDITWAVEFORM) editwaveform();
+  else ui_runkey(key & 0xffff, key >> 24, (key >> 16) & 1);
 }
 
 //
@@ -952,6 +1016,7 @@ static const GRIDITEM patternmenu[] = {
   {"Insert Row", GRIDKEY(KEY_INS, 0, 0), "Insert"},
   {"Delete Row", GRIDKEY(KEY_DEL, 0, 127), "Delete"},
   {"Pattern", 0, NULL, patternmenu2},
+  {"Portamento to Next Note", GRIDKEY(KEY_Y, 1, 0), "<Shift>y"},
   {NULL},
   {"Mute Channel", GRIDKEY(KEY_F4, 1, 0), "<Shift>F4"},
   {NULL}, {NULL}
@@ -987,6 +1052,8 @@ static const GRIDITEM tablemenu[] = {
   {"Convert Absolute/Relative Note", GRIDKEY(KEY_R, 1, 0), "<Shift>r"},
   {"Convert Pulse/Filter Limit", GRIDKEY(KEY_L, 1, 0), "<Shift>l"},
   {"Remove Unused Rows", GRIDKEY(KEY_O, 1, 0), "<Shift>o"},
+  {NULL},
+  {"Edit Waveform…", GRID_EDITWAVEFORM, NULL},
   {NULL}, {NULL}
 };
 

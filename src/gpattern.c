@@ -329,6 +329,10 @@ void patterncommands(void)
     if (shiftpressed) shrinkpattern();
     break;
 
+    case KEY_Y:
+    if (shiftpressed) autoportamento();
+    break;
+
     case KEY_P:
     if (shiftpressed) expandpattern();
     break;
@@ -1122,6 +1126,68 @@ void nextpattern(void)
     if (eppos > pattlen[epnum[epchn]]) eppos = pattlen[epnum[epchn]];
   }
   if (epchn == epmarkchn) epmarkchn = -1;
+}
+
+// Shift+Y (from GoatTracker Ultra): glide from the note at the cursor (or
+// the last one above it) to the next note in the channel. A portamento
+// speed that arrives in time is put in a free speedtable row, 1XY/2XY is
+// written on the rows in between and the target note gets 300 (tie).
+// The tempo is taken from the last Fxx above the cursor in this pattern;
+// funktempo isn't accounted for.
+int autoportamento(void)
+{
+  unsigned char *patt = pattern[epnum[epchn]];
+  int len = pattlen[epnum[epchn]];
+  int from = -1, to = -1, tempo, row, ticks, speed, freq1, freq2, index;
+  int note1, note2;
+  unsigned char cmd;
+
+  for (row = 0; (row <= eppos) && (row < len); row++)
+    if ((patt[row*4] >= FIRSTNOTE) && (patt[row*4] <= LASTNOTE)) from = row;
+  for (row = eppos + 1; row < len; row++)
+  {
+    if ((patt[row*4] >= FIRSTNOTE) && (patt[row*4] <= LASTNOTE))
+    {
+      to = row;
+      break;
+    }
+  }
+  if ((from < 0) || (to < 0)) return 0;
+
+  // Tempo in ticks per row
+  tempo = multiplier ? 6 * multiplier : 3;
+  for (row = 0; row <= eppos; row++)
+  {
+    if (patt[row*4+2] == CMD_SETTEMPO)
+    {
+      unsigned char t = patt[row*4+3] & 0x7f;
+      if (t >= 2) tempo = t;
+    }
+  }
+
+  note1 = patt[from*4] - FIRSTNOTE;
+  note2 = patt[to*4] - FIRSTNOTE;
+  freq1 = freqtbllo[note1] | (freqtblhi[note1] << 8);
+  freq2 = freqtbllo[note2] | (freqtblhi[note2] << 8);
+  ticks = (to - eppos) * tempo;
+  if (ticks <= 0) return 0;
+  cmd = (freq2 >= freq1) ? CMD_PORTAUP : CMD_PORTADOWN;
+  speed = abs(freq2 - freq1) / ticks;
+  if (!speed) return 0;
+
+  index = findfreespeedtable();
+  if (index < 0) return 0;
+  ltable[STBL][index] = speed >> 8;
+  rtable[STBL][index] = speed & 0xff;
+
+  for (row = eppos; row < to; row++)
+  {
+    patt[row*4+2] = cmd;
+    patt[row*4+3] = index + 1;
+  }
+  patt[to*4+2] = CMD_TONEPORTA;
+  patt[to*4+3] = 0;
+  return 1;
 }
 
 void shrinkpattern(void)

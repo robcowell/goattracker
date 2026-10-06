@@ -37,6 +37,7 @@ GtkWidget *grid_tables_new(void);
 void grid_setfontscale(int scale);
 void grid_redraw(void);
 void grid_followcursor(void);
+void grid_relayout(void);
 
 // gtkpanels.c: instrument list/editor and song information
 extern GtkWidget *instrlist;
@@ -62,6 +63,7 @@ void ui_preferences(void);
 
 // gtkui.c: settings of this editor (kept in ~/.goattrk/gtkedition.ini)
 extern int settings_backupinterval;
+extern int settings_decodetables;
 void ui_backupschanged(void);
 void ui_restartsound(void);
 
@@ -77,6 +79,16 @@ void ui_wavexport(void);
 // gtkinfo.c: plain-language descriptions of song data
 void info_describe(char *buf, int size);
 void table_describe(int table, int pos, char *buf, int size, int brief);
+int table_isreachable(int table, int pos);
+
+// Waveform toggles for a wavetable row (wavetable = 1) or an instrument's
+// first frame waveform, in a popover pointing at where (NULL = whole widget)
+void ui_waveformeditor(GtkWidget *parent, const GdkRectangle *where, unsigned char *value, int wavetable, int coalesce);
+
+// Jumps to related data (ENTER on a table pointer or command, the instrument
+// editor's table buttons) remember where they came from; Alt+Left goes back
+void ui_pushplace(void);
+void ui_goback(void);
 
 // Latin-1 (song data) <-> UTF-8 (GTK) conversion; returns a static buffer
 const char *ui_toutf8(const char *latin1);

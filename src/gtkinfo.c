@@ -32,11 +32,12 @@ static void channelmask(unsigned char mask, char *buf, int size)
   if (!len) snprintf(buf, size, "no channels");
 }
 
-static const char *passband(unsigned char l)
+static const char *passband(unsigned char l, int brief)
 {
   static const char *names[] = {"no passband", "lowpass", "bandpass", "low+bandpass",
     "highpass", "notch", "band+highpass", "all passbands"};
-  return names[(l >> 4) & 7];
+  static const char *briefnames[] = {"OFF", "LP", "BP", "LBP", "HP", "NOTCH", "BHP", "ALL"};
+  return brief ? briefnames[(l >> 4) & 7] : names[(l >> 4) & 7];
 }
 
 // Describe speedtable row (1-based) as its possible meanings
@@ -81,7 +82,7 @@ void table_describe(int table, int pos, char *buf, int size, int brief)
       else if (r <= 0xdf) snprintf(note, sizeof note, "%s%s", brief ? "" : "note ", notename[r - 0x80]);
       else snprintf(note, sizeof note, "?");
 
-      if (!l) snprintf(buf, size, brief ? "      %s" : "Waveform unchanged, %s", note);
+      if (!l) snprintf(buf, size, brief ? "        %s" : "Waveform unchanged, %s", note);
       else if (l <= 0x0f) snprintf(buf, size, brief ? "DELAY %d" : "Delay %d frames", l);
       else if (l <= 0xdf)
       {
@@ -112,8 +113,8 @@ void table_describe(int table, int pos, char *buf, int size, int brief)
     {
       char chns[32];
       channelmask(r & 0x0f, chns, sizeof chns);
-      if (brief) snprintf(buf, size, "%s R%X %X", (l & 0x70) ? passband(l) : "OFF", r >> 4, r & 0x0f);
-      else snprintf(buf, size, "Filter %s, resonance %X, %s", passband(l), r >> 4, chns);
+      if (brief) snprintf(buf, size, "%s RES %X CH %X", passband(l, 1), r >> 4, r & 0x0f);
+      else snprintf(buf, size, "Filter %s, resonance %X, %s", passband(l, 0), r >> 4, chns);
     }
     else if (l)
       snprintf(buf, size, brief ? "MOD %+d x%d" : "Change cutoff by %+d for %d frames", (signed char)r, l);
@@ -122,11 +123,79 @@ void table_describe(int table, int pos, char *buf, int size, int brief)
     break;
 
     case STBL:
-    if (brief) snprintf(buf, size, "%s", (l & 0x80) ? "note-indep." : "");
+    if (brief) snprintf(buf, size, "%s", (l & 0x80) ? "NOTE-INDEP." : "");
     else snprintf(buf, size, "Vibrato speed %02X depth %02X, portamento speed %04X, or funktempo %02X/%02X%s",
       l, r, (l << 8) | r, l, r, (l & 0x80) ? " (note-independent)" : "");
     break;
   }
+}
+
+// Which table rows can ever be executed: followed from the instruments'
+// table pointers and every table command in the patterns and the wavetable.
+// Recalculated when the song data changes.
+static unsigned char reach[MAX_TABLES][MAX_TABLELEN];
+static unsigned reachversion;
+static int reachvalid;
+
+static void followtable(int table, int pos);
+
+static void followcommand(unsigned char cmd, unsigned char data)
+{
+  if (!data) return;
+  switch (cmd)
+  {
+    case CMD_PORTAUP:
+    case CMD_PORTADOWN:
+    case CMD_TONEPORTA:
+    case CMD_VIBRATO:
+    case CMD_FUNKTEMPO:
+    followtable(STBL, data - 1);
+    break;
+
+    case CMD_SETWAVEPTR: followtable(WTBL, data - 1); break;
+    case CMD_SETPULSEPTR: followtable(PTBL, data - 1); break;
+    case CMD_SETFILTERPTR: followtable(FTBL, data - 1); break;
+  }
+}
+
+static void followtable(int table, int pos)
+{
+  while ((pos >= 0) && (pos < MAX_TABLELEN) && (!reach[table][pos]))
+  {
+    unsigned char l = ltable[table][pos];
+    unsigned char r = rtable[table][pos];
+
+    reach[table][pos] = 1;
+    // A speedtable entry is a single row
+    if (table == STBL) return;
+    if (l == 0xff)
+    {
+      if (!r) return;
+      pos = r - 1;
+      continue;
+    }
+    if ((table == WTBL) && (l >= WAVECMD)) followcommand(l & 0x0f, r);
+    pos++;
+  }
+}
+
+int table_isreachable(int table, int pos)
+{
+  if ((!reachvalid) || (reachversion != undo_version()))
+  {
+    int c, d;
+
+    memset(reach, 0, sizeof reach);
+    for (c = 1; c < MAX_INSTR; c++)
+      for (d = 0; d < MAX_TABLES; d++)
+        if (instr[c].ptr[d]) followtable(d, instr[c].ptr[d] - 1);
+    for (c = 0; c < MAX_PATT; c++)
+      for (d = 0; d < pattlen[c]; d++)
+        followcommand(pattern[c][d * 4 + 2], pattern[c][d * 4 + 3]);
+    reachversion = undo_version();
+    reachvalid = 1;
+  }
+  return reach[table][pos];
 }
 
 static void describecommand(unsigned char cmd, unsigned char data, char *buf, int size)
