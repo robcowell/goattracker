@@ -21,6 +21,7 @@ void sm_songchanged(void);
 void sm_edited(void);
 void sm_newsong(void);
 void sm_opensong(const char *path);
+void sm_togglepause(void);
 int sm_subtune(void);
 int sm_subtunes(void);
 const char *sm_toutf8(const char *latin1);
