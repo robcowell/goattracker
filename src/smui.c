@@ -32,6 +32,7 @@ static char *songfile;
 static void (*pending)(void);
 
 static void savesongas(void);
+static void savesettings(void);
 
 // goattrk2.c's tracker key commands call these. SidMonkey never runs those
 // commands, but they are linked in with the engine's startup code.
@@ -428,6 +429,8 @@ static void quitnow(void)
 {
   if (quitting) return;
   quitting = 1;
+  roll_releaseall();
+  savesettings();
   goattrk2_shutdown();
   g_application_quit(G_APPLICATION(app));
 }
@@ -445,6 +448,108 @@ static gboolean onsignal(gpointer data)
 }
 
 //
+// Settings of SidMonkey itself, in ~/.goattrk/sidmonkey.ini (the engine's
+// are shared with GoatTracker in goattrk2.cfg)
+//
+
+static char *settingspath(void)
+{
+  return g_build_filename(g_get_home_dir(), ".goattrk", "sidmonkey.ini", NULL);
+}
+
+static void loadsettings(void)
+{
+  GKeyFile *keys = g_key_file_new();
+  char *path = settingspath();
+
+  if (g_key_file_load_from_file(keys, path, G_KEY_FILE_NONE, NULL))
+  {
+    char *name = g_key_file_get_string(keys, "midi", "input", NULL);
+    if ((name) && (name[0]) && (!midi_setinput(name)))
+      g_printerr("sidmonkey: MIDI input \"%s\" is not available\n", name);
+    // Remembered even when it isn't plugged in
+    if (name) g_strlcpy(midi_inputname, name, sizeof midi_inputname);
+    g_free(name);
+  }
+  g_free(path);
+  g_key_file_unref(keys);
+}
+
+static void savesettings(void)
+{
+  GKeyFile *keys = g_key_file_new();
+  char *path = settingspath();
+  char *dir = g_path_get_dirname(path);
+
+  g_key_file_load_from_file(keys, path, G_KEY_FILE_KEEP_COMMENTS, NULL);
+  g_key_file_set_string(keys, "midi", "input", midi_inputname);
+  g_mkdir_with_parents(dir, 0700);
+  g_key_file_save_to_file(keys, path, NULL);
+  g_free(dir);
+  g_free(path);
+  g_key_file_unref(keys);
+}
+
+//
+// MIDI
+//
+
+static void onmidinote(int midinote, int velocity)
+{
+  int note = midi_tonote(midinote);
+
+  if (!velocity) roll_noteoff(MIDIVOICE(midinote));
+  else if (note >= 0) roll_noteon(MIDIVOICE(midinote), note);
+}
+
+static void onmidichosen(GObject *drop, GParamSpec *pspec, gpointer data)
+{
+  guint sel = gtk_drop_down_get_selected(GTK_DROP_DOWN(drop));
+  GtkStringObject *item = gtk_drop_down_get_selected_item(GTK_DROP_DOWN(drop));
+  const char *name = ((sel) && (item)) ? gtk_string_object_get_string(item) : "";
+
+  if (!midi_setinput(name)) sm_toast("That MIDI input could not be connected");
+  savesettings();
+}
+
+// Choose the MIDI controller to play notes with
+static void choosemidi(void)
+{
+  AdwDialog *dialog = adw_alert_dialog_new("MIDI Input", "Notes played on this MIDI controller sound with "
+    "the current instrument, and are written into the clip when step entry is on.");
+  char **sources = midi_listsources();
+  GtkStringList *list = gtk_string_list_new(NULL);
+  GtkWidget *drop;
+  int c, selected = 0;
+
+  gtk_string_list_append(list, "Off");
+  for (c = 0; sources[c]; c++)
+  {
+    gtk_string_list_append(list, sources[c]);
+    if (!strcmp(sources[c], midi_inputname)) selected = c + 1;
+  }
+  // The saved one stays listed when it isn't plugged in
+  if ((midi_inputname[0]) && (!selected))
+  {
+    gtk_string_list_append(list, midi_inputname);
+    selected = c + 1;
+  }
+  g_strfreev(sources);
+  drop = gtk_drop_down_new(G_LIST_MODEL(list), NULL);
+  gtk_drop_down_set_selected(GTK_DROP_DOWN(drop), selected);
+  g_signal_connect(drop, "notify::selected", G_CALLBACK(onmidichosen), NULL);
+  adw_alert_dialog_set_extra_child(ADW_ALERT_DIALOG(dialog), drop);
+  adw_alert_dialog_add_response(ADW_ALERT_DIALOG(dialog), "close", "_Close");
+  adw_dialog_present(dialog, GTK_WIDGET(sm_window));
+}
+
+// Key releases don't arrive while another window has the focus
+static void onactivechanged(GtkWindow *window, GParamSpec *pspec, gpointer data)
+{
+  if (!gtk_window_is_active(window)) roll_releaseall();
+}
+
+//
 // Actions and shortcuts
 //
 
@@ -458,11 +563,12 @@ static void act(GSimpleAction *action, GVariant *parameter, gpointer data)
   else if (!strcmp(name, "save-as")) savesongas();
   else if (!strcmp(name, "undo")) undoredo(0);
   else if (!strcmp(name, "redo")) undoredo(1);
+  else if (!strcmp(name, "midi")) choosemidi();
   else if (!strcmp(name, "quit")) confirmdiscard(quitnow);
 }
 
 static const GActionEntry winactions[] = {
-  {"new", act}, {"open", act}, {"save", act}, {"save-as", act}, {"undo", act}, {"redo", act}, {"quit", act}};
+  {"new", act}, {"open", act}, {"save", act}, {"save-as", act}, {"undo", act}, {"redo", act}, {"midi", act}, {"quit", act}};
 
 static void addshortcut(GtkShortcutController *sc, const char *accel, GtkShortcutFunc func)
 {
@@ -484,6 +590,10 @@ static GMenuModel *primarymenu(void)
   s = g_menu_new();
   g_menu_append(s, "_Save", "win.save");
   g_menu_append(s, "Save _As…", "win.save-as");
+  g_menu_append_section(menu, NULL, G_MENU_MODEL(s));
+  g_object_unref(s);
+  s = g_menu_new();
+  g_menu_append(s, "_MIDI Input…", "win.midi");
   g_menu_append_section(menu, NULL, G_MENU_MODEL(s));
   g_object_unref(s);
   s = g_menu_new();
@@ -517,6 +627,9 @@ static void onactivate(GtkApplication *application, gpointer data)
   sm_window = GTK_WINDOW(adw_application_window_new(application));
   gtk_window_set_default_size(sm_window, 1100, 760);
   g_signal_connect(sm_window, "close-request", G_CALLBACK(oncloserequest), NULL);
+  g_signal_connect(sm_window, "notify::is-active", G_CALLBACK(onactivechanged), NULL);
+  midi_sethandler("SidMonkey", onmidinote);
+  loadsettings();
   g_action_map_add_action_entries(G_ACTION_MAP(sm_window), winactions, G_N_ELEMENTS(winactions), NULL);
   for (i = 0; i < (int)G_N_ELEMENTS(accels); i++)
   {

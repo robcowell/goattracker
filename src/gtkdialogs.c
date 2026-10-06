@@ -1062,11 +1062,11 @@ void ui_preferences(void)
     for (c = 0; sources[c]; c++)
     {
       gtk_string_list_append(list, sources[c]);
-      if (!strcmp(sources[c], settings_midiinput)) selected = c + 1;
+      if (!strcmp(sources[c], midi_inputname)) selected = c + 1;
     }
-    if ((settings_midiinput[0]) && (!selected))
+    if ((midi_inputname[0]) && (!selected))
     {
-      gtk_string_list_append(list, settings_midiinput);
+      gtk_string_list_append(list, midi_inputname);
       selected = c + 1;
     }
     g_strfreev(sources);

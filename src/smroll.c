@@ -90,6 +90,14 @@ static ROLLNOTE dragorig;
 static int dragrow0, dragpitch0;
 static int previewing = -1;
 
+// Playing notes from the keyboard or MIDI, and step entry: each note played
+// is written at the step cursor, which then moves on by the note length
+static GtkToggleButton *stepbutton;
+static GtkSpinButton *octavespin;
+static int cursorrow;
+static unsigned held[16];
+static int nheld;
+
 static void preview(int note, int instr)
 {
   if (isplaying()) return;
@@ -198,6 +206,7 @@ void roll_refresh(void)
   if (rollpatt < 0) return;
   roll_read(rollpatt, &roll);
   if (selnote >= roll.nnotes) selnote = -1;
+  if (cursorrow > roll.rows) cursorrow = roll.rows;
   syncing = 1;
   gtk_spin_button_set_value(rowsspin, roll.rows);
   syncing = 0;
@@ -253,7 +262,11 @@ void roll_show(int chnum, int patt, int trans)
     return;
   }
   gtk_stack_set_visible_child_name(GTK_STACK(stack), "roll");
-  if (changed) selnote = -1;
+  if (changed)
+  {
+    selnote = -1;
+    cursorrow = 0;
+  }
   roll_refresh();
   if (changed)
   {
@@ -384,6 +397,21 @@ static void drawgrid(GtkDrawingArea *area, cairo_t *cr, int width, int height, g
     }
   }
 
+  // Step cursor
+  if (cursorrow <= roll.rows)
+  {
+    int on = gtk_toggle_button_get_active(stepbutton);
+    double x = KEYW + cursorrow * colpx;
+    cairo_set_source_rgba(cr, 0.35, 0.65, 1.0, on ? 0.9 : 0.35);
+    cairo_rectangle(cr, x - 1, RULERH, 2, NPITCH * PITCHH);
+    cairo_fill(cr);
+    cairo_move_to(cr, x - 5, vy + RULERH);
+    cairo_line_to(cr, x + 5, vy + RULERH);
+    cairo_line_to(cr, x, vy + RULERH + 6);
+    cairo_close_path(cr);
+    cairo_fill(cr);
+  }
+
   // Playhead
   if ((isplaying()) && (rollchn >= 0) && (chn[rollchn].pattnum == rollpatt))
   {
@@ -508,7 +536,16 @@ static void ondragbegin(GtkGestureDrag *gesture, double x, double y, gpointer da
   dragmode = DRAG_NONE;
   dragmoved = 0;
   if (rollpatt < 0) return;
-  if (inruler(y)) return;
+  if (inruler(y))
+  {
+    if (!inkeys(x))
+    {
+      cursorrow = rowat(x + colpx / 2);
+      if (cursorrow > roll.rows) cursorrow = roll.rows;
+      gtk_widget_queue_draw(grid);
+    }
+    return;
+  }
   if (inkeys(x))
   {
     preview(notefrompitch(pitchat(y)), curinstr);
@@ -613,6 +650,103 @@ static void ondragend(GtkGestureDrag *gesture, double dx, double dy, gpointer da
     if ((mode != DRAG_MOVE) && (selnote >= 0)) notelen = roll.notes[selnote].len;
     commit();
   }
+  if ((selnote >= 0) && (selnote < roll.nnotes))
+  {
+    cursorrow = roll.notes[selnote].start + roll.notes[selnote].len;
+    gtk_widget_queue_draw(grid);
+  }
+}
+
+// A note played from the keyboard or MIDI (FIRSTNOTE-based, as heard). It
+// sounds on a free voice; with step entry on it is also written at the step
+// cursor, unless another played note is still held (a chord)
+void roll_noteon(unsigned id, int note)
+{
+  int i, len;
+
+  for (i = 0; i < nheld; i++)
+    if (held[i] == id) return;    // key repeat
+  if (nheld < (int)G_N_ELEMENTS(held)) held[nheld++] = id;
+  jam_noteon(id, note, curinstr, rollchn >= 0 ? rollchn : 0);
+
+  if ((rollpatt < 0) || (!gtk_toggle_button_get_active(stepbutton)) || (nheld > 1)) return;
+  if (cursorrow >= roll.rows)
+  {
+    sm_toast("The step cursor is at the end of the clip: click the ruler to move it");
+    return;
+  }
+  // The new note replaces whatever starts during it
+  len = notelen;
+  if (cursorrow + len > roll.rows) len = roll.rows - cursorrow;
+  for (i = 0; i < roll.nnotes; i++)
+    if ((roll.notes[i].start >= cursorrow) && (roll.notes[i].start < cursorrow + len))
+    {
+      memmove(&roll.notes[i], &roll.notes[i + 1], (roll.nnotes - i - 1) * sizeof(ROLLNOTE));
+      roll.nnotes--;
+      i--;
+    }
+  if (roll.nnotes >= ROLL_MAXNOTES) return;
+  i = roll.nnotes++;
+  memset(&roll.notes[i], 0, sizeof roll.notes[i]);
+  roll.notes[i].start = cursorrow;
+  roll.notes[i].len = len;
+  roll.notes[i].note = notefrompitch(note - FIRSTNOTE);
+  roll.notes[i].instr = curinstr;
+  roll.notes[i].keyoff = 1;
+  selnote = i;
+  cursorrow += roll.notes[i].len;
+  commit();
+}
+
+void roll_noteoff(unsigned id)
+{
+  int i;
+
+  for (i = 0; i < nheld; i++)
+    if (held[i] == id)
+    {
+      held[i] = held[--nheld];
+      break;
+    }
+  jam_noteoff(id);
+}
+
+void roll_releaseall(void)
+{
+  nheld = 0;
+  jam_releaseall();
+}
+
+// Raw key codes identify the physical key: the keyval without Shift, so
+// note keys work the same with Shift held and on any layout level
+static unsigned rawkey_(GtkEventControllerKey *controller, guint keyval, guint keycode)
+{
+  GdkEvent *event = gtk_event_controller_get_current_event(GTK_EVENT_CONTROLLER(controller));
+  GdkKeymapKey *keys;
+  guint *keyvals;
+  int n, c;
+  guint layout = event ? gdk_key_event_get_layout(event) : 0;
+
+  if (gdk_display_map_keycode(gtk_widget_get_display(grid), keycode, &keys, &keyvals, &n))
+  {
+    for (c = 0; c < n; c++)
+      if (((guint)keys[c].group == layout) && (keys[c].level == 0))
+      {
+        keyval = keyvals[c];
+        break;
+      }
+    g_free(keys);
+    g_free(keyvals);
+  }
+  keyval = gdk_keyval_to_lower(keyval);
+  return keyval < 256 ? keyval : 0;
+}
+
+static void onkeyreleased(GtkEventControllerKey *controller, guint keyval, guint keycode, GdkModifierType state,
+  gpointer data)
+{
+  unsigned raw = rawkey_(controller, keyval, keycode);
+  if (raw) roll_noteoff(raw);
 }
 
 static void deleteselected(void)
@@ -630,7 +764,41 @@ static gboolean onkey(GtkEventControllerKey *controller, guint keyval, guint key
   int shift = (state & GDK_SHIFT_MASK) != 0, ctrl = (state & GDK_CONTROL_MASK) != 0;
   ROLLNOTE *n;
 
-  if ((selnote < 0) || (selnote >= roll.nnotes)) return FALSE;
+  // Note keys play notes (two rows, as in trackers)
+  if (!(state & (GDK_CONTROL_MASK | GDK_ALT_MASK)))
+  {
+    unsigned raw = rawkey_(controller, keyval, keycode);
+    int note = raw ? pattern_notekey(raw) : -1;
+    if (note >= 0)
+    {
+      if (note <= LASTNOTE) roll_noteon(raw, note);
+      return TRUE;
+    }
+  }
+  switch (keyval)
+  {
+    case GDK_KEY_Page_Up:
+    case GDK_KEY_Page_Down:
+    gtk_spin_button_set_value(octavespin, epoctave + (keyval == GDK_KEY_Page_Up ? 1 : -1));
+    return TRUE;
+
+    case GDK_KEY_Escape:
+    if (selnote < 0) return FALSE;
+    selnote = -1;
+    describenote();
+    gtk_widget_queue_draw(grid);
+    return TRUE;
+  }
+  if ((selnote < 0) || (selnote >= roll.nnotes))
+  {
+    // Without a selected note, the arrows move the step cursor
+    if ((keyval == GDK_KEY_Left) && (cursorrow > 0)) cursorrow--;
+    else if ((keyval == GDK_KEY_Right) && (cursorrow < roll.rows)) cursorrow++;
+    else if (keyval == GDK_KEY_Home) cursorrow = 0;
+    else return FALSE;
+    gtk_widget_queue_draw(grid);
+    return TRUE;
+  }
   n = &roll.notes[selnote];
   switch (keyval)
   {
@@ -728,6 +896,11 @@ static void oneffect(GObject *drop, GParamSpec *pspec, gpointer data)
   commit();
 }
 
+static void onoctave(GtkSpinButton *spin, gpointer data)
+{
+  epoctave = (int)gtk_spin_button_get_value(spin);
+}
+
 static void onlength(GObject *drop, GParamSpec *pspec, gpointer data)
 {
   notelen = lengths[gtk_drop_down_get_selected(lengthdrop)];
@@ -756,22 +929,41 @@ void roll_tick(void)
 
 GtkWidget *roll_new(void)
 {
-  GtkWidget *box, *bar, *label, *empty;
+  GtkWidget *box, *top, *bar, *label, *empty;
   GtkGesture *gesture;
   GtkEventController *controller;
   static const char *lengthnames[] = {"¼ beat", "½ beat", "1 beat", "2 beats", "1 bar", NULL};
 
   box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+  top = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+  gtk_widget_set_margin_start(top, 12);
+  gtk_widget_set_margin_end(top, 12);
+  gtk_widget_set_margin_top(top, 6);
+  infolabel = gtk_label_new("");
+  gtk_label_set_xalign(GTK_LABEL(infolabel), 0);
+  gtk_label_set_ellipsize(GTK_LABEL(infolabel), PANGO_ELLIPSIZE_END);
+  gtk_widget_set_hexpand(infolabel, TRUE);
+  gtk_box_append(GTK_BOX(top), infolabel);
+  gtk_box_append(GTK_BOX(box), top);
   bar = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
   gtk_widget_set_margin_start(bar, 12);
   gtk_widget_set_margin_end(bar, 12);
   gtk_widget_set_margin_top(bar, 6);
   gtk_widget_set_margin_bottom(bar, 6);
-  infolabel = gtk_label_new("");
-  gtk_label_set_xalign(GTK_LABEL(infolabel), 0);
-  gtk_label_set_ellipsize(GTK_LABEL(infolabel), PANGO_ELLIPSIZE_END);
-  gtk_widget_set_hexpand(infolabel, TRUE);
-  gtk_box_append(GTK_BOX(bar), infolabel);
+
+  stepbutton = GTK_TOGGLE_BUTTON(gtk_toggle_button_new());
+  gtk_button_set_icon_name(GTK_BUTTON(stepbutton), "media-record-symbolic");
+  gtk_widget_set_tooltip_text(GTK_WIDGET(stepbutton), "Step entry: notes you play on the keyboard or a MIDI "
+    "controller are written at the blue cursor, which then moves on by the note length");
+  g_signal_connect_swapped(stepbutton, "toggled", G_CALLBACK(gtk_widget_queue_draw), grid);
+  gtk_box_append(GTK_BOX(bar), GTK_WIDGET(stepbutton));
+  gtk_box_append(GTK_BOX(bar), gtk_label_new("Octave"));
+  octavespin = GTK_SPIN_BUTTON(gtk_spin_button_new_with_range(0, 6, 1));
+  gtk_spin_button_set_value(octavespin, epoctave);
+  gtk_widget_set_tooltip_text(GTK_WIDGET(octavespin), "The octave the keyboard plays: Z to M and Q to U are two "
+    "octaves of piano keys (Page Up and Page Down change it)");
+  g_signal_connect(octavespin, "value-changed", G_CALLBACK(onoctave), NULL);
+  gtk_box_append(GTK_BOX(bar), GTK_WIDGET(octavespin));
 
   gtk_box_append(GTK_BOX(bar), gtk_label_new("Instrument"));
   instrlist = gtk_string_list_new(NULL);
@@ -800,11 +992,11 @@ GtkWidget *roll_new(void)
   }
 
   label = gtk_label_new("Rows");
-  gtk_box_append(GTK_BOX(bar), label);
+  gtk_box_append(GTK_BOX(top), label);
   rowsspin = GTK_SPIN_BUTTON(gtk_spin_button_new_with_range(1, MAX_PATTROWS, 1));
   gtk_widget_set_tooltip_text(GTK_WIDGET(rowsspin), "How long this pattern is, in rows");
   g_signal_connect(rowsspin, "value-changed", G_CALLBACK(onrows), NULL);
-  gtk_box_append(GTK_BOX(bar), GTK_WIDGET(rowsspin));
+  gtk_box_append(GTK_BOX(top), GTK_WIDGET(rowsspin));
   gtk_box_append(GTK_BOX(box), bar);
 
   grid = gtk_drawing_area_new();
@@ -818,6 +1010,7 @@ GtkWidget *roll_new(void)
   gtk_widget_add_controller(grid, GTK_EVENT_CONTROLLER(gesture));
   controller = gtk_event_controller_key_new();
   g_signal_connect(controller, "key-pressed", G_CALLBACK(onkey), NULL);
+  g_signal_connect(controller, "key-released", G_CALLBACK(onkeyreleased), NULL);
   gtk_widget_add_controller(grid, controller);
   controller = gtk_event_controller_scroll_new(GTK_EVENT_CONTROLLER_SCROLL_VERTICAL);
   g_signal_connect(controller, "scroll", G_CALLBACK(onscroll), NULL);
