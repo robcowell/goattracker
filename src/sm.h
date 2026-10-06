@@ -10,6 +10,7 @@
 #include "gundo.h"
 #include "ginfo.h"
 #include "ghost.h"
+#include "garrange.h"
 
 // smui.c
 extern GtkWindow *sm_window;
@@ -26,5 +27,13 @@ GtkWidget *arrange_new(void);
 void arrange_songchanged(void);
 void arrange_refresh(void);
 void arrange_tick(void);
+extern const double sm_palette[8][3];
+
+// smroll.c: the piano roll for the selected clip
+GtkWidget *roll_new(void);
+void roll_show(int chnum, int patt, int trans);
+void roll_refresh(void);
+void roll_refreshinstruments(void);
+void roll_tick(void);
 
 #endif
