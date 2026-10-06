@@ -1,12 +1,36 @@
 //
-// GOATTRACKER v2 GTK user interface: plain-language descriptions
+// GOATTRACKER v2: plain-language descriptions
 //
 // Describes the pattern, orderlist or table entry under the cursor for the
 // status bar, following the definitions in readme.txt sections 3.2-3.4.
+// Engine side (no GTK), so that every front end can use it.
 //
 
 #include <string.h>
-#include "gtkui.h"
+#include "goattrk2.h"
+#include "gundo.h"
+#include "ginfo.h"
+
+// Song and instrument names are Latin-1, which maps directly onto the first
+// 256 Unicode code points
+static const char *latin1toutf8(const char *latin1)
+{
+  static char buf[256];
+  int len = 0;
+
+  for (; (*latin1) && (len < (int)sizeof buf - 2); latin1++)
+  {
+    unsigned char c = *latin1;
+    if (c < 0x80) buf[len++] = c;
+    else
+    {
+      buf[len++] = 0xc0 | (c >> 6);
+      buf[len++] = 0x80 | (c & 0x3f);
+    }
+  }
+  buf[len] = 0;
+  return buf;
+}
 
 static void waveformname(unsigned char w, char *buf, int size)
 {
@@ -273,7 +297,7 @@ static void describepattern(char *buf, int size)
     case 1:
     case 2:
     if (!row[1]) snprintf(buf, size, "No instrument change");
-    else snprintf(buf, size, "Instrument %02X: %s", row[1], ui_toutf8(instr[row[1]].name));
+    else snprintf(buf, size, "Instrument %02X: %s", row[1], latin1toutf8(instr[row[1]].name));
     break;
 
     default:

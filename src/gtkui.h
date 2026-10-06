@@ -13,6 +13,7 @@
 #include "goattrk2.h"
 #include "gui.h"
 #include "gundo.h"
+#include "ginfo.h"
 
 // gtkui.c: window, toolbar, menus and keyboard routing
 extern GtkWindow *mainwindow;
@@ -87,11 +88,6 @@ void ui_exportagain(void);
 
 // gtkwav.c
 void ui_wavexport(void);
-
-// gtkinfo.c: plain-language descriptions of song data
-void info_describe(char *buf, int size);
-void table_describe(int table, int pos, char *buf, int size, int brief);
-int table_isreachable(int table, int pos);
 
 // Waveform toggles for a wavetable row (wavetable = 1) or an instrument's
 // first frame waveform, in a popover pointing at where (NULL = whole widget)
