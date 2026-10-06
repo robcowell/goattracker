@@ -1430,6 +1430,27 @@ void ui_quitnow(void)
   g_application_quit(G_APPLICATION(app));
 }
 
+// The window opens at 1280x820, grown in step with the text size (-w2…-w4)
+// but kept within the screen
+static void setdefaultsize(void)
+{
+  double factor = (10 + 2 * (CLAMP(bigwindow, 1, 4) - 1)) / 10.0;
+  int width = (int)(1280 * factor), height = (int)(820 * factor);
+  GListModel *monitors = gdk_display_get_monitors(gtk_widget_get_display(GTK_WIDGET(mainwindow)));
+  GdkMonitor *monitor = g_list_model_get_item(monitors, 0);
+
+  if (monitor)
+  {
+    GdkRectangle area;
+
+    gdk_monitor_get_geometry(monitor, &area);
+    width = MIN(width, area.width * 95 / 100);
+    height = MIN(height, area.height * 90 / 100);
+    g_object_unref(monitor);
+  }
+  gtk_window_set_default_size(mainwindow, width, height);
+}
+
 static void onactivate(GtkApplication *application, gpointer data)
 {
   GtkWidget *window = adw_application_window_new(application);
@@ -1442,7 +1463,7 @@ static void onactivate(GtkApplication *application, gpointer data)
   mainwindow = GTK_WINDOW(window);
   adw_style_manager_set_color_scheme(adw_style_manager_get_default(), ADW_COLOR_SCHEME_PREFER_DARK);
   gtk_window_set_title(mainwindow, "GoatTracker");
-  gtk_window_set_default_size(mainwindow, 1280, 820);
+  setdefaultsize();
   loadsettings();
   addactions();
 
