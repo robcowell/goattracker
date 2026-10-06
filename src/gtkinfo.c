@@ -22,14 +22,15 @@ static void waveformname(unsigned char w, char *buf, int size)
     if (w & (1 << c)) len += snprintf(buf + len, size - len, ", %s", bits[c]);
 }
 
-static void channelmask(unsigned char mask, char *buf, int size)
+// Voices in a filter bitmask: "channels 1+2", or "1+2" when brief
+static void channelmask(unsigned char mask, char *buf, int size, int brief)
 {
   int c, len = 0;
 
   buf[0] = 0;
   for (c = 0; c < MAX_CHN; c++)
-    if (mask & (1 << c)) len += snprintf(buf + len, size - len, "%s%d", len ? "+" : "channels ", c + 1);
-  if (!len) snprintf(buf, size, "no channels");
+    if (mask & (1 << c)) len += snprintf(buf + len, size - len, "%s%d", len ? "+" : (brief ? "" : "channels "), c + 1);
+  if (!len) snprintf(buf, size, brief ? "-" : "no channels");
 }
 
 static const char *passband(unsigned char l, int brief)
@@ -112,8 +113,8 @@ void table_describe(int table, int pos, char *buf, int size, int brief)
     if (l & 0x80)
     {
       char chns[32];
-      channelmask(r & 0x0f, chns, sizeof chns);
-      if (brief) snprintf(buf, size, "%s RES %X CH %X", passband(l, 1), r >> 4, r & 0x0f);
+      channelmask(r & 0x0f, chns, sizeof chns, brief);
+      if (brief) snprintf(buf, size, "%s RES %X CH %s", passband(l, 1), r >> 4, chns);
       else snprintf(buf, size, "Filter %s, resonance %X, %s", passband(l, 0), r >> 4, chns);
     }
     else if (l)
@@ -226,7 +227,7 @@ static void describecommand(unsigned char cmd, unsigned char data, char *buf, in
     if (!data) snprintf(buf, size, "B00 Filter off (stops the filtertable)");
     else
     {
-      channelmask(data & 0x0f, extra, sizeof extra);
+      channelmask(data & 0x0f, extra, sizeof extra, 0);
       snprintf(buf, size, "B%02X Filter resonance %X, %s", data, data >> 4, extra);
     }
     break;
