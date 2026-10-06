@@ -21,6 +21,7 @@ static GtkWidget *sidlabels[MAX_CHN + 1][7];
 static int drawnnotes[MAX_CHN];
 static unsigned char shownregs[NUMSIDREGS];
 static int heldnote = -1;
+static int pianoscale = 1;     // follows the grids' text size (View → Larger Text)
 
 static const unsigned chncolors[MAX_CHN] = {0x7fb2ff, 0xffad5e, 0x58c27d};
 
@@ -107,13 +108,14 @@ static void drawpiano(GtkDrawingArea *area, cairo_t *cr, int width, int height, 
 {
   double ww = (double)width / whitekeys();
   PangoLayout *layout = gtk_widget_create_pango_layout(GTK_WIDGET(area), NULL);
-  PangoFontDescription *font = pango_font_description_from_string("Monospace 7");
+  PangoFontDescription *font = pango_font_description_from_string("Monospace");
   int n;
 
   setcolor(cr, 0x14161b);
   cairo_paint(cr);
   for (n = 0; n < NUMKEYS; n++)
     if (!isblack(n)) fillkey(cr, n, ww, height, 0);
+  pango_font_description_set_size(font, (7 + 2 * (pianoscale - 1)) * PANGO_SCALE);
   pango_layout_set_font_description(layout, font);
   for (n = 0; n < NUMKEYS; n += 12)
   {
@@ -165,6 +167,19 @@ static void onpianoreleased(GtkGestureClick *gesture, int npress, double x, doub
   releasenote(epchn);
 }
 
+static int pianoheight(void)
+{
+  return 44 + 10 * (pianoscale - 1);
+}
+
+void monitor_setscale(int scale)
+{
+  pianoscale = CLAMP(scale, 1, 4);
+  if (!piano) return;
+  gtk_drawing_area_set_content_height(GTK_DRAWING_AREA(piano), pianoheight());
+  gtk_widget_queue_draw(piano);
+}
+
 GtkWidget *monitor_piano_new(void)
 {
   GtkGesture *gesture = gtk_gesture_click_new();
@@ -172,7 +187,7 @@ GtkWidget *monitor_piano_new(void)
 
   for (c = 0; c < MAX_CHN; c++) drawnnotes[c] = -1;
   piano = gtk_drawing_area_new();
-  gtk_drawing_area_set_content_height(GTK_DRAWING_AREA(piano), 44);
+  monitor_setscale(pianoscale);
   gtk_drawing_area_set_draw_func(GTK_DRAWING_AREA(piano), drawpiano, NULL, NULL);
   gtk_widget_set_tooltip_text(piano, "The notes the channels are playing. Click a key to play it with the current instrument.");
   g_signal_connect(gesture, "pressed", G_CALLBACK(onpianopressed), NULL);

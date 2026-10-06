@@ -135,6 +135,7 @@ void grid_setfontscale(int scale)
   if (fontdesc) pango_font_description_free(fontdesc);
   fontdesc = NULL;
   updatesizes();
+  monitor_setscale(fontscale);
   grid_redraw();
 }
 
