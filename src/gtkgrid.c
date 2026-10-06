@@ -56,16 +56,21 @@ static PangoFontDescription *fontdesc = NULL;
 // Table layout. With decoded tables the wave, pulse and filter tables get a
 // column describing their rows.
 #define TBL_WIDTH 10
-#define TBL_DECODEW 15
 
 static int decoded(int table)
 {
   return (settings_decodetables) && (table != STBL);
 }
 
+// Width of a table's description column; the filter table's lists voices
+static int decodew(int table)
+{
+  return (table == FTBL) ? 21 : 15;
+}
+
 static int tblwidth(int table)
 {
-  return TBL_WIDTH + (decoded(table) ? TBL_DECODEW : 0);
+  return TBL_WIDTH + (decoded(table) ? decodew(table) : 0);
 }
 
 // Where table starts, in characters
@@ -527,7 +532,7 @@ static void drawtables(GtkDrawingArea *area, cairo_t *cr, int width, int height,
       if ((decoded(c)) && ((l) || (r)))
       {
         table_describe(c, p, buf, sizeof buf, 1);
-        buf[TBL_DECODEW - 1] = 0;
+        buf[decodew(c) - 1] = 0;
         text(cr, layout, x + TBL_WIDTH * cellw, y, dcol, buf);
       }
     }
