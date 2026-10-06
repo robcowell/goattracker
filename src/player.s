@@ -566,6 +566,10 @@ mt_copyregs:    lda ghostregs,x                 ;previous frame's SID values in 
                 bpl mt_copyregs
                 .ENDIF
 
+              .IF (ZPPLAYSID != 0)
+                jsr mt_playzeropage             ;Previous frame's zeropage ghostregs to the SID
+              .ENDIF
+
                 ldx #$00                        ;Channel index
 
         ;Song initialization
@@ -1553,6 +1557,45 @@ mt_execwavetick0:
 mt_execwavetick0jump:
                 jsr mt_tick0_0
                 jmp mt_done
+              .ENDIF
+
+        ;Copy the zeropage ghostregs to the SID (option from GoatTracker
+        ;Ultra), so the music also plays without the caller doing it
+
+              .IF (ZPPLAYSID != 0)
+mt_playzeropage:
+                ldx #$00
+                jsr mt_playzeropagechn
+                ldx #$07
+                jsr mt_playzeropagechn
+                ldx #$0e
+                jsr mt_playzeropagechn
+                lda ghostfiltcutlow
+                sta SIDBASE+$15
+                lda ghostfiltcutoff
+                sta SIDBASE+$16
+                lda ghostfiltctrl
+                sta SIDBASE+$17
+                lda ghostfilttype
+                sta SIDBASE+$18
+                rts
+
+mt_playzeropagechn:
+                lda ghostwave,x
+                sta SIDBASE+$04,x
+                lda ghostfreqlo,x
+                sta SIDBASE+$00,x
+                lda ghostfreqhi,x
+                sta SIDBASE+$01,x
+                lda ghostpulselo,x
+                sta SIDBASE+$02,x
+                lda ghostpulsehi,x
+                sta SIDBASE+$03,x
+                lda ghostad,x
+                sta SIDBASE+$05,x
+                lda ghostsr,x
+                sta SIDBASE+$06,x
+                rts
               .ENDIF
 
               .IF (NOEFFECTS == 0)
