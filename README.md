@@ -103,6 +103,12 @@ Songs are saved with the editor-settings block that [GoatTracker Ultra](https://
 
 The settings that used to be command-line options or hand edits to `goattrk2.cfg` are in **Preferences** (Ctrl+,): buffer length, mixing rate, SID emulation and interpolation, PAL/NTSC timing, HardSID and CatWeasel, the playroutine optimisations, and the backup interval. `goattrk2.cfg` keeps its stock format; settings of this edition go in `~/.goattrk/gtkedition.ini`.
 
+### WAV export and song length
+
+- **Export WAV…** (Shift+F11) renders the current subtune to a 16-bit WAV file far faster than real time. You can choose how many times through the song, a fade-out, normalisation, and **channel stems**: one file per channel with the others muted, sharing the full mix's normalisation so their levels stay comparable. The stems don't add up exactly to the mix, because the SID's filter and output stage are shared between channels. Exports start without the click the SID's first volume write would otherwise cause.
+- The status bar shows the **song length** next to the play time (for example `00:00 / 2:41`). It's measured by a fast silent run of the playroutine, a moment after you stop editing.
+- **Export Again** (Ctrl+F9) packs the song again to the last exported file with the same options, without opening the dialog.
+
 ### Menus, toolbar and status bar
 
 - **Header bar:** transport controls, follow-play, and undo/redo.
