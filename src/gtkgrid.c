@@ -136,6 +136,7 @@ void grid_setfontscale(int scale)
   fontdesc = NULL;
   updatesizes();
   monitor_setscale(fontscale);
+  panels_setscale(fontscale);
   grid_redraw();
 }
 
