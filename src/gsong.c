@@ -268,31 +268,31 @@ static void readsongchunks(FILE *handle, int instrcount)
 // Song files are read into memory once, and both the checks below and the
 // load itself read that copy. A file that changes while it is being loaded
 // (on a network or FUSE mount, say) therefore can't slip counts past the
-// checks. No real song comes near the size limit.
-#define MAX_SONGFILESIZE (1024 * 1024)
-
-static FILE *opensongfile(const char *name, unsigned char **data, int *damaged)
+// checks. A file that can't be copied (an empty one, a stream that can't be
+// sized, or one too big to allocate) is read directly, as it always was.
+static FILE *opensongfile(const char *name, unsigned char **data)
 {
   FILE *file = fopen(name, "rb");
   FILE *mem = NULL;
   long size;
 
   *data = NULL;
-  *damaged = 0;
   if (!file) return NULL;
-  if ((!fseek(file, 0, SEEK_END)) && ((size = ftell(file)) > 0) && (size <= MAX_SONGFILESIZE) &&
-    (!fseek(file, 0, SEEK_SET)))
+  if ((fseek(file, 0, SEEK_END)) || ((size = ftell(file)) <= 0) || (fseek(file, 0, SEEK_SET)))
   {
-    *data = malloc(size);
-    if ((*data) && (fread(*data, size, 1, file) == 1)) mem = fmemopen(*data, size, "rb");
+    rewind(file);
+    return file;
   }
-  fclose(file);
+  *data = malloc(size);
+  if ((*data) && (fread(*data, size, 1, file) == 1)) mem = fmemopen(*data, size, "rb");
   if (!mem)
   {
     free(*data);
     *data = NULL;
-    *damaged = 1;
+    rewind(file);
+    return file;
   }
+  fclose(file);
   return mem;
 }
 
@@ -458,12 +458,10 @@ void loadsong(void)
   char ident[4];
   FILE *handle;
   unsigned char *filedata;
-  int damaged;
   int instrcount = 0;
 
   loadresult = LOAD_OK;
-  handle = opensongfile(songfilename, &filedata, &damaged);
-  if (damaged) loadresult = LOAD_DAMAGED;
+  handle = opensongfile(songfilename, &filedata);
 
   if (handle)
   {
@@ -1893,7 +1891,6 @@ void mergesong(void)
   char ident[4];
   FILE *handle;
   unsigned char *filedata;
-  int damaged;
   int songbase;
   int pattbase;
   int instrbase;
@@ -1933,8 +1930,7 @@ void mergesong(void)
     tablebase[c] = gettablelen(c);
   }
 
-  handle = opensongfile(songfilename, &filedata, &damaged);
-  if (damaged) mergeresult = MERGE_BADFILE;
+  handle = opensongfile(songfilename, &filedata);
 
   if (handle)
   {
