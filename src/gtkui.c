@@ -582,14 +582,64 @@ void ui_settitle(void)
 // factor the grids use (12/10, 14/10, 16/10)
 static int textscale = 1;
 
+static double textfactor(int scale)
+{
+  return (10 + 2 * (CLAMP(scale, 1, 4) - 1)) / 10.0;
+}
+
+// Grow or shrink the window with the text, keeping it on its monitor.
+// The size it would have had without that limit is remembered, so going
+// back to a smaller text size returns to the size it had before.
+// Maximized and fullscreen windows already fill the screen.
+static int lastwidth, lastheight;       // size last set here
+static double wantwidth, wantheight;    // ...before limiting it to the monitor
+
+static void resizefortext(int oldscale, int newscale)
+{
+  GtkWidget *window = GTK_WIDGET(mainwindow);
+  double ratio = textfactor(newscale) / textfactor(oldscale);
+  GdkSurface *surface = gtk_native_get_surface(GTK_NATIVE(window));
+  GdkMonitor *monitor;
+  int width, height;
+
+  if ((!surface) || (gtk_window_is_maximized(mainwindow)) || (gtk_window_is_fullscreen(mainwindow))) return;
+  width = gdk_surface_get_width(surface);
+  height = gdk_surface_get_height(surface);
+  // Resized by hand since the last time: start from the size it has now
+  if ((width != lastwidth) || (height != lastheight))
+  {
+    wantwidth = width;
+    wantheight = height;
+  }
+  wantwidth *= ratio;
+  wantheight *= ratio;
+  width = (int)(wantwidth + 0.5);
+  height = (int)(wantheight + 0.5);
+  monitor = gdk_display_get_monitor_at_surface(gtk_widget_get_display(window), surface);
+  if (monitor)
+  {
+    GdkRectangle area;
+
+    gdk_monitor_get_geometry(monitor, &area);
+    width = MIN(width, area.width * 95 / 100);
+    height = MIN(height, area.height * 90 / 100);
+  }
+  lastwidth = width;
+  lastheight = height;
+  gtk_window_set_default_size(mainwindow, width, height);
+}
+
 void ui_settextscale(int scale)
 {
   static GtkCssProvider *provider = NULL;
   static const char *classes[] = {NULL, NULL, "gt-textsize-2", "gt-textsize-3", "gt-textsize-4"};
-  int c;
+  int c, oldscale = textscale;
 
   textscale = CLAMP(scale, 1, 4);
   if (!mainwindow) return;
+  // Changed from the View menu while the window is open
+  if ((textscale != oldscale) && (gtk_widget_get_realized(GTK_WIDGET(mainwindow))))
+    resizefortext(oldscale, textscale);
   if (!provider)
   {
     // libadwaita gives some styles fixed sizes, so restate them relative to
@@ -1434,8 +1484,11 @@ void ui_quitnow(void)
 // but kept within the screen
 static void setdefaultsize(void)
 {
-  double factor = (10 + 2 * (CLAMP(bigwindow, 1, 4) - 1)) / 10.0;
+  double factor = textfactor(bigwindow);
   int width = (int)(1280 * factor), height = (int)(820 * factor);
+
+  wantwidth = width;
+  wantheight = height;
   GListModel *monitors = gdk_display_get_monitors(gtk_widget_get_display(GTK_WIDGET(mainwindow)));
   GdkMonitor *monitor = g_list_model_get_item(monitors, 0);
 
@@ -1448,6 +1501,8 @@ static void setdefaultsize(void)
     height = MIN(height, area.height * 90 / 100);
     g_object_unref(monitor);
   }
+  lastwidth = width;
+  lastheight = height;
   gtk_window_set_default_size(mainwindow, width, height);
 }
 
