@@ -582,6 +582,9 @@ void ui_settitle(void)
 // factor the grids use (12/10, 14/10, 16/10)
 static int textscale = 1;
 
+// Window size and state when GoatTracker last quit (from gtkedition.ini)
+static int savedwidth = 0, savedheight = 0, savedtextscale = 1, savedmaximized = 0;
+
 static double textfactor(int scale)
 {
   return (10 + 2 * (CLAMP(scale, 1, 4) - 1)) / 10.0;
@@ -1387,6 +1390,18 @@ static void loadsettings(void)
         g_printerr("goattrk2: MIDI input \"%s\" is not available\n", name);
       g_free(name);
     }
+    v = g_key_file_get_integer(keys, "window", "width", &error);
+    if (!error) savedwidth = v;
+    g_clear_error(&error);
+    v = g_key_file_get_integer(keys, "window", "height", &error);
+    if (!error) savedheight = v;
+    g_clear_error(&error);
+    v = g_key_file_get_integer(keys, "window", "text-size", &error);
+    if (!error) savedtextscale = CLAMP(v, 1, 4);
+    g_clear_error(&error);
+    v = g_key_file_get_boolean(keys, "window", "maximized", &error);
+    if (!error) savedmaximized = v;
+    g_clear_error(&error);
     v = g_key_file_get_boolean(keys, "view", "piano", &error);
     if (!error) settings_showpiano = v;
     g_clear_error(&error);
@@ -1413,6 +1428,21 @@ static void savesettings(void)
   g_key_file_set_boolean(keys, "editor", "auto-next-pattern", autonextpattern);
   g_key_file_set_boolean(keys, "export", "patterns-in-play-order", packplayorder);
   g_key_file_set_boolean(keys, "view", "piano", settings_showpiano);
+  if (mainwindow)
+  {
+    int width, height;
+
+    // The default size follows the window as it is resized, and keeps the
+    // unmaximized size while it is maximized
+    gtk_window_get_default_size(mainwindow, &width, &height);
+    if ((width > 0) && (height > 0))
+    {
+      g_key_file_set_integer(keys, "window", "width", width);
+      g_key_file_set_integer(keys, "window", "height", height);
+      g_key_file_set_integer(keys, "window", "text-size", bigwindow);
+    }
+    g_key_file_set_boolean(keys, "window", "maximized", gtk_window_is_maximized(mainwindow));
+  }
   g_key_file_set_boolean(keys, "view", "sid-registers", settings_showsidstate);
   g_mkdir_with_parents(dir, 0755);
   g_key_file_save_to_file(keys, path, NULL);
@@ -1480,18 +1510,28 @@ void ui_quitnow(void)
   g_application_quit(G_APPLICATION(app));
 }
 
-// The window opens at 1280x820, grown in step with the text size (-w2…-w4)
-// but kept within the screen
+// The window opens at the size it had when GoatTracker last quit, or at
+// 1280x820 the first time. Either is scaled if the text size is different
+// now (-w2…-w4), and kept within the screen.
 static void setdefaultsize(void)
 {
   double factor = textfactor(bigwindow);
-  int width = (int)(1280 * factor), height = (int)(820 * factor);
-
-  wantwidth = width;
-  wantheight = height;
   GListModel *monitors = gdk_display_get_monitors(gtk_widget_get_display(GTK_WIDGET(mainwindow)));
   GdkMonitor *monitor = g_list_model_get_item(monitors, 0);
+  int width, height;
 
+  if ((savedwidth > 0) && (savedheight > 0))
+  {
+    wantwidth = savedwidth * factor / textfactor(savedtextscale);
+    wantheight = savedheight * factor / textfactor(savedtextscale);
+  }
+  else
+  {
+    wantwidth = 1280 * factor;
+    wantheight = 820 * factor;
+  }
+  width = (int)(wantwidth + 0.5);
+  height = (int)(wantheight + 0.5);
   if (monitor)
   {
     GdkRectangle area;
@@ -1506,6 +1546,15 @@ static void setdefaultsize(void)
   gtk_window_set_default_size(mainwindow, width, height);
 }
 
+// Maximizing only once the window is on screen at its normal size, so the
+// window manager restores it to that size (some restore a window that
+// started maximized to a smaller one)
+static void onfirstmap(GtkWidget *widget, gpointer data)
+{
+  g_signal_handlers_disconnect_by_func(widget, G_CALLBACK(onfirstmap), data);
+  if (savedmaximized) gtk_window_maximize(mainwindow);
+}
+
 static void onactivate(GtkApplication *application, gpointer data)
 {
   GtkWidget *window = adw_application_window_new(application);
@@ -1518,8 +1567,8 @@ static void onactivate(GtkApplication *application, gpointer data)
   mainwindow = GTK_WINDOW(window);
   adw_style_manager_set_color_scheme(adw_style_manager_get_default(), ADW_COLOR_SCHEME_PREFER_DARK);
   gtk_window_set_title(mainwindow, "GoatTracker");
-  setdefaultsize();
   loadsettings();
+  setdefaultsize();
   addactions();
 
   // The grids must exist before the panels that refer to them
@@ -1615,6 +1664,7 @@ static void onactivate(GtkApplication *application, gpointer data)
 
   if (win_fullscreen) gtk_window_fullscreen(mainwindow);
   undo_reset();
+  g_signal_connect(window, "map", G_CALLBACK(onfirstmap), NULL);
   gtk_window_present(mainwindow);
   ui_refresh();
   ui_focuseditmode();
