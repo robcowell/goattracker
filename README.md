@@ -55,7 +55,7 @@ The three per-channel orderlists now run top to bottom like a sequencer, so the 
 
 Table commands and jumps are coloured, and a green bar marks where the selected instrument's pointer starts in each table.
 
-- **Rows are described** next to their hex values: `WAVE 41 +0`, `DELAY 3`, `SET 800`, `MOD +32 x16`, `LP RES C CH 1`, `JUMP 05`. **View → Describe Table Rows** turns the column off when space is short.
+- **Rows are described** next to their hex values: `WAVE 41 +0`, `DELAY 3`, `SET 800`, `MOD +32 x16`, `LP RES C CH 1`, `JUMP 05`. **View → Describe Table Rows** turns the column off; in a narrow window the tables scroll sideways instead.
 - **Rows nothing can reach are dimmed.** The editor follows every instrument's table pointers, the table commands in the patterns and the wavetable's own commands, so leftover data stands out. A line under each jump or stop shows where a run of rows ends.
 - **Edit Waveform…** in the wavetable's right-click menu sets a row's waveform with buttons for noise, pulse, saw, triangle, test, ring, sync and gate. The pencil next to the instrument's **1st frame wave** does the same.
 
