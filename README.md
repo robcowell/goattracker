@@ -1,12 +1,34 @@
-# GoatTracker 2 · GTK Edition
+# GoatTracker 2 for Linux: GTK Edition and SidMonkey
 
-A modern Linux front end for **GoatTracker 2**, Lasse Öörni's tracker-style music editor for the Commodore 64's SID chip. It keeps everything that makes GoatTracker GoatTracker: the playroutine, reSID emulation, packer/relocator, file formats and every keyboard command. The full-screen 1990s text interface is replaced by a docked, resizable GTK4/libadwaita window in the tradition of trackers from FastTracker 2 to Renoise.
+Two music programs for the Commodore 64's SID chip, built on the engine of **GoatTracker 2**, Lasse Öörni's tracker. Both use GoatTracker's playroutine, reSID emulation, packer and song files, so a song can move freely between them, and both run on Linux with GTK4 and libadwaita.
 
-![GoatTracker GTK Edition playing GhostTrackers](docs/screenshots/hero.png)
+- **[GoatTracker GTK Edition](#goattracker-gtk-edition)** (`goattrk2`) is GoatTracker 2.77 with a modern interface: every feature and keyboard command of the original, in a docked, resizable window, with undo, MIDI, WAV export and more.
+- **[SidMonkey](#sidmonkey)** (`sidmonkey`) is for people new to SID music. Songs are clips on three voice lanes, notes go in a piano roll, and instruments come from a library of preset sounds with plain controls, so there's no hex and no tables to learn first.
+
+| GoatTracker GTK Edition | SidMonkey |
+| --- | --- |
+| ![GoatTracker GTK Edition playing GhostTrackers](docs/screenshots/hero.png) | ![SidMonkey playing its starter song](docs/screenshots/sidmonkey.png) |
+
+## Which one?
+
+| | GoatTracker GTK Edition | SidMonkey |
+| --- | --- | --- |
+| **For** | Anyone who knows trackers, or wants every detail under control | Newcomers to SID music, and quick sketches |
+| **Writing notes** | Pattern grid of notes, instruments and hex commands, entered from the keyboard | A piano roll: draw notes with the mouse, or play them on the keyboard or a MIDI controller |
+| **Arranging** | An orderlist per channel, with transposes and repeats | Clips on voice lanes: drag, copy, transpose |
+| **Instruments** | Wave, pulse, filter and speed tables, edited row by row | Preset sounds, and a designer with sliders for envelope, waveform, chord, pulse sweep, filter and vibrato |
+| **Exporting** | SID, PRG and BIN with every packer option; WAV with per-channel stems | WAV, MP3, SID and PRG |
+| **Run** | `linux/goattrk2` | `linux/sidmonkey` |
+
+Songs saved by either open in the other, and in stock GoatTracker 2. A good path is to start in SidMonkey and open the song in the GTK Edition when you want more control.
+
+## GoatTracker GTK Edition
+
+A modern Linux front end for GoatTracker 2. It keeps everything that makes GoatTracker GoatTracker: the playroutine, reSID emulation, packer/relocator, file formats and every keyboard command. The full-screen 1990s text interface is replaced by a docked, resizable GTK4/libadwaita window in the tradition of trackers from FastTracker 2 to Renoise.
 
 This is an unofficial port of GoatTracker v2.77. The engine and song data are unchanged, so songs, instruments and packed output work interchangeably with the original.
 
-## Before and after
+### Before and after
 
 | GoatTracker 2.77 | GTK Edition |
 | --- | --- |
@@ -22,9 +44,9 @@ This is an unofficial port of GoatTracker v2.77. The engine and song data are un
 | Jam mode plays one note at a time | Polyphonic jam across the three channels, plus MIDI input |
 | SDL 1.2 (no longer maintained) | GTK4, libadwaita and SDL2 audio |
 
-## What's new
+### What's new
 
-### A tracker layout you can see all at once
+#### A tracker layout you can see all at once
 
 Orderlists on the left, patterns in the middle, instruments down the right, the wave, pulse, filter and speed tables along the bottom, and a piano keyboard showing what each channel is playing, all visible together and all live while the song plays. Panels are separated by draggable dividers.
 
@@ -35,7 +57,7 @@ All three grid editors work with the mouse:
 - Double-click an orderlist entry to open that pattern.
 - The scroll wheel moves the view without moving the cursor; any key brings the view back to the cursor.
 
-#### Pattern editor
+##### Pattern editor
 
 The edit row stays centred while the song scrolls past it, in the style of Renoise and Impulse Tracker. Notes, instruments, commands and their data each have their own colour, and empty fields can be shown as dots. The highlight step is adjustable, and the row each channel is playing is tinted green.
 
@@ -47,13 +69,13 @@ Marked blocks (Shift+cursor keys) are shaded, and clicking a channel header mute
 
 ![Pattern editor with a marked block](docs/screenshots/pattern-selection.png)
 
-#### Vertical orderlists
+##### Vertical orderlists
 
 The three per-channel orderlists now run top to bottom like a sequencer, so the cursor keys move the way they look: up and down between positions, left and right between digits and channels. Transposes and repeats are coloured, and green and red bars mark the F2 play start and end positions.
 
 ![Orderlist](docs/screenshots/orderlist.png)
 
-#### All four tables side by side
+##### All four tables side by side
 
 Table commands and jumps are coloured, and a green bar marks where the selected instrument's pointer starts in each table.
 
@@ -66,7 +88,7 @@ Table commands and jumps are coloured, and a green bar marks where the selected 
 
 ![Waveform editor on a wavetable row](docs/screenshots/waveform.png)
 
-### A native instrument editor
+#### A native instrument editor
 
 The instrument list sits above an editor for the selected instrument:
 
@@ -80,7 +102,7 @@ The instrument list sits above an editor for the selected instrument:
 
 Song name, author and copyright are ordinary text fields. Accented characters are converted to and from the Latin-1 the song format stores.
 
-### Undo and redo
+#### Undo and redo
 
 GoatTracker 2 never had undo. Now every change can be undone, with **Ctrl+Z** and **Ctrl+Shift+Z** / **Ctrl+Y** or the arrows in the header bar. That covers note entry, orderlist and table edits, instrument edits, pasting, transposing, merging, loading an instrument, and even Optimize and Clear.
 
@@ -88,7 +110,7 @@ GoatTracker 2 never had undo. Now every change can be undone, with **Ctrl+Z** an
 - Typing a name or dragging a slider counts as one step.
 - Up to 500 steps are kept.
 
-### Never lose unsaved work
+#### Never lose unsaved work
 
 The title bar shows **•** while the song has unsaved changes. The bullet disappears again if you undo back to the saved state.
 
@@ -98,7 +120,7 @@ Closing the window, quitting or opening another song asks first, and **Save…**
 
 ![Save changes prompt](docs/screenshots/unsaved-prompt.png)
 
-### Saving, backups and safety
+#### Saving, backups and safety
 
 - **Ctrl+S** saves over the current file from anywhere; **Save Song As…** (F11) asks for a name.
 - **Automatic backups**: every 30 seconds a changed song is copied to `~/.goattrk/backups/`, with a timestamp in the name. The newest 20 per song are kept. The interval is set in Preferences, which also has a button to open the folder.
@@ -106,21 +128,21 @@ Closing the window, quitting or opening another song asks first, and **Save…**
 - **Drag and drop** a `.sng` onto the window to open it, or an `.ins` to load it into the current instrument.
 - **Merging** tells you when the song runs out of subtunes, instruments, table rows or patterns part way, instead of stopping silently. Ctrl+Z undoes the partial merge.
 
-### Settings that travel with the song
+#### Settings that travel with the song
 
 Songs are saved with the editor-settings block that [GoatTracker Ultra](https://github.com/jpage8580/GTUltra) introduced: SID model, PAL/NTSC, speed multiplier, hard-restart ADSR and the playroutine optimisations. Opening the song restores them, here or in GoatTracker Ultra. The block is appended after the normal song data, which stock GoatTracker 2 ignores, so files stay compatible. GoatTracker Ultra's per-instrument pan values and SIDTracker64-mode flag are kept when you save, and you're warned that a SIDTracker64-mode song will sound different here.
 
-### Preferences
+#### Preferences
 
 The settings that used to be command-line options or hand edits to `goattrk2.cfg` are in **Preferences** (Ctrl+,): buffer length, mixing rate, SID emulation and interpolation, PAL/NTSC timing, HardSID and CatWeasel, and the playroutine optimisations. It also has the settings new to this edition: volume, detune, MIDI input, the backup interval and continuing into the next pattern. `goattrk2.cfg` keeps its stock format; settings of this edition go in `~/.goattrk/gtkedition.ini`.
 
-### WAV export and song length
+#### WAV export and song length
 
 - **Export WAV…** (Shift+F11) renders the current subtune to a 16-bit WAV file far faster than real time. You can choose how many times through the song, a fade-out, normalisation, and **channel stems**: one file per channel with the others muted, sharing the full mix's normalisation so their levels stay comparable. The stems don't add up exactly to the mix, because the SID's filter and output stage are shared between channels. Exports start without the click the SID's first volume write would otherwise cause.
 - The status bar shows the **song length** next to the play time (for example `00:00 / 2:41`). It's measured by a fast silent run of the playroutine, a moment after you stop editing.
 - **Export Again** (Ctrl+F9) packs the song again to the last exported file with the same options, without opening the dialog.
 
-### Playback
+#### Playback
 
 ![Playing with the SID registers and piano keyboard shown](docs/screenshots/playback.png)
 
@@ -134,7 +156,7 @@ The settings that used to be command-line options or hand edits to `goattrk2.cfg
 - **MIDI input:** choose a keyboard or other MIDI source under **Preferences → MIDI**. In edit mode its notes are entered at the pattern cursor like typed ones (middle C is C-4); in jam mode they play polyphonically. GoatTracker also appears as an ALSA sequencer client, so other sources can be connected to it with `aconnect` or a patchbay.
 - **Continue into the next pattern** in Preferences: moving the cursor past the end of a pattern goes on to the next pattern in that channel's orderlist, and past the start goes back to the previous one.
 
-### Menus, toolbar and status bar
+#### Menus, toolbar and status bar
 
 - **Header bar:** transport controls, follow-play, loop, undo/redo, and the arrow that goes back after a jump to table or instrument data.
 - **Toolbar:** edit/jam mode, octave, row highlight step, note-entry layout (Protracker, DMC or Janko), SID model, speed multiplier, playback volume and the hard-restart ADSR. These used to be hidden behind Shift+F-key combinations.
@@ -147,7 +169,7 @@ The settings that used to be command-line options or hand edits to `goattrk2.cfg
 
 The main menu has separate items for opening, merging and saving songs, loading and saving instruments, and exporting, so none of them depend on which editor you are in.
 
-### Pack, relocate and export in a real dialog
+#### Pack, relocate and export in a real dialog
 
 The playroutine options are switches that respect their dependencies (sound effects, zeropage ghost registers and full buffering switch on buffered writes for you). The player and zeropage addresses are hex fields, and the output format is a drop-down. After packing you get the size report the command-line packer prints.
 
@@ -162,7 +184,7 @@ Two packing options come from [GoatTracker Ultra](https://github.com/jpage8580/G
 
 The packer is shared with `gt2reloc`, which produces byte-identical output to the original with these options off. `gt2reloc` takes them as `-Q1` and `-K1`.
 
-### Dialogs instead of y/n prompts
+#### Dialogs instead of y/n prompts
 
 **Shift+Esc** used to ask six yes/no questions in a row. It now opens one dialog where you tick the parts to clear and set the new pattern length.
 
@@ -172,13 +194,13 @@ The keyboard reference (**F12**) is a help window; **Shift+F12** puts the curren
 
 ![Keyboard help](docs/screenshots/help.png)
 
-### Bigger text when you want it
+#### Bigger text when you want it
 
 The grids use a scalable monospace font. **View → Larger Text** (or `-w2`…`-w4` on the command line) makes the whole window bigger together: the grids, panels, toolbar, menus and dialogs. The window and the panels in it grow and shrink with it, as far as the screen allows, whether you start with `-w2`…`-w4` or change the size from the View menu. It can be resized to any size, and the text size, window size, maximized state and the positions of the dividers between panels are remembered for next time. The screenshot below is at the third size, the same song as above.
 
 ![Larger text in a larger window](docs/screenshots/large-text.png)
 
-## What stays the same
+### What stays the same
 
 - **Keyboard:** every key command from the original works, in the editor it belongs to. The full reference is in [readme.txt](readme.txt) section 2.3, or press **F12**. The few differences:
   - Ctrl+Z and Ctrl+Y are undo and redo. Ctrl otherwise still doubles as Shift; Shift+Z still cycles auto-advance.
@@ -186,10 +208,86 @@ The grids use a scalable monospace font. **View → Larger Text** (or `-w2`…`-
   - In jam mode, notes stop when their key is released, and several keys can sound at once.
   - Tab cycles between the editors.
   - Text fields keep their own keys, except the function keys.
-- **Files:** `.sng` and `.ins` files keep the stock format, and stock GoatTracker 2 loads songs saved here. The only addition is the editor-settings block at the end of a song (see above), which it ignores. The settings file `~/.goattrk/goattrk2.cfg` is unchanged too.
+- **Files:** `.sng` and `.ins` files keep the stock format, and stock GoatTracker 2 loads songs saved here. The only additions are the editor-settings block at the end of a song (see above) and, for songs made in SidMonkey, its instrument recipes. Stock GoatTracker ignores both. The settings file `~/.goattrk/goattrk2.cfg` is unchanged too.
 - **Command line:** the same options as before (`goattrk2 song.sng -s1 -e1` and so on). `-w` now sets the text size, and `-??` opens the help window at startup.
 - **Sound:** the same reSID and reSID-fp emulation, and the same playroutine, timing and packer.
 - **Tools:** `gt2reloc`, `ins2snd2`, `sngspli2` and `mod2sng` are built alongside the editor and behave as before. `gt2reloc` also accepts the two new packing options, `-Q1` and `-K1`.
+
+## SidMonkey
+
+SidMonkey is a second front end on the same engine, for making SID music without learning a tracker first. It edits the song data directly, so every song it saves is an ordinary GoatTracker song.
+
+### Start with something that plays
+
+Started without a song, SidMonkey offers:
+- **Start with a Beat:** a four-bar tune with drums, a bass line and a melody on preset instruments. Press Space to hear it, then change it.
+- **An empty song.**
+- **A song of your own.**
+- **The example songs** in `examples/`.
+
+**Learn the SID** (F1) is a short guide to the three voices, the four waveforms, the envelope, the single filter, clips and patterns, and how time is counted.
+
+![Welcome dialog](docs/screenshots/sidmonkey-welcome.png)
+
+### Arrange with clips
+
+Each voice is a lane, and each pattern it plays is a clip with a miniature of its notes.
+- **Moving clips:** drag a clip to move it, within its voice or to another one; hold Ctrl to copy it.
+- **Right-click menu:** duplicate a clip (sharing its notes, or as a copy of its own), insert an empty clip, transpose by a semitone or an octave, choose where the voice repeats from, or delete it. Most of these have keys as well.
+- **Shared patterns:** the clip's description warns when its pattern plays somewhere else too, because changing the notes changes every copy.
+- **Playback:** double-click a clip to play from there, and click a voice's name to mute it. A playhead follows each voice.
+
+### Write notes in the piano roll
+
+Selecting a clip opens it in the piano roll, at the pitch it sounds.
+- **Notes:** click to add a note and drag to set its length; drag a note to move it or its right edge to resize it; right-click to delete it.
+- **Instrument and length:** set the instrument and note length for new notes, and the pattern's length, in the toolbar.
+- **Effects:** give a note **legato**, a **slide in** (fast, medium or slow) or **vibrato** (gentle, normal or wide).
+- **Playing notes:** the keyboard plays notes on two rows like a tracker, with Page Up and Page Down changing the octave; a MIDI controller plays too (**MIDI Input…** in the main menu).
+- **Step entry:** with the record button on, each note you play is written at the blue cursor, which then moves on by the note length.
+
+A voice plays one note at a time, so a new note ends the one before it. Chords come from instruments that flick between notes.
+
+### Instruments without the tables
+
+The sidebar lists the song's instruments.
+- **Sound library:** **+** adds one from a library of 17 preset sounds: basses, leads, chords, a pad, drums and an effect. Click a sound to try it on the instrument and hear it.
+- **Designer:** adjusts a preset instrument with plain controls: kind of sound (tone, kick, snare, hi-hat, tom), waveform, a click at the start, crisp starts (hard restart), envelope (with a drawing of it), chord, pulse width and sweep, filter and sweep, and vibrato. Each change rebuilds the instrument straight away and can be undone.
+- **Under the Hood:** shows the instrument's values and the wave, pulse, filter and speed table rows built for it, described the same way the GTK Edition does.
+- **Instruments made in GoatTracker:** they can be played, renamed and have their envelope changed, or be replaced with a preset sound.
+
+| Sound library | Designer | Under the Hood |
+| --- | --- | --- |
+| ![Sound library](docs/screenshots/sidmonkey-library.png) | ![Instrument designer](docs/screenshots/sidmonkey-designer.png) | ![Under the Hood](docs/screenshots/sidmonkey-hood.png) |
+
+The SID has one filter for all three voices. The bottom bar warns when more than one instrument uses it, and shows how many of a song's 208 patterns and 63 instruments are in use.
+
+### Export
+
+The export button in the header bar writes:
+- **Audio:** WAV, or MP3 when `libmp3lame` is installed. You choose how many times through the song and the fade-out, and the result is normalised.
+- **A SID music file:** for SID players and C64 emulators.
+- **A C64 program (PRG):** for use in C64 programs, with the player where GoatTracker's packer settings put it.
+
+### Songs move both ways
+
+- **Song files:** SidMonkey opens and saves GoatTracker songs (`.sng`). Unedited data is written back byte for byte, and only what you change is rewritten.
+- **Preset instruments:** they are saved with a recipe of their settings, in a block at the end of the song file that GoatTracker 2 and GoatTracker Ultra ignore (readme.txt section 6.1.7). If such an instrument is later changed in GoatTracker, SidMonkey treats it as one made in GoatTracker.
+- **Settings:** SidMonkey shares the GTK Edition's sound settings in `~/.goattrk/goattrk2.cfg`. Its own (the MIDI input) are in `~/.goattrk/sidmonkey.ini`.
+
+### Keys
+
+| Key | Does |
+| --- | --- |
+| Space | Play or stop |
+| Ctrl+N, Ctrl+O, Ctrl+S, Ctrl+Shift+S | New, open, save, save as |
+| Ctrl+Z, Ctrl+Shift+Z or Ctrl+Y | Undo, redo |
+| Ctrl+E | Export audio |
+| F1 | Learn the SID |
+| Arrow keys (arrangement) | Select clips; Shift+Up/Down transposes, Ctrl+Shift+Up/Down by an octave |
+| Ctrl+D, Ctrl+Shift+D, Delete | Duplicate a clip, duplicate it as a new pattern, delete it |
+| Z…M, Q…U (piano roll) | Play notes; Page Up/Down changes the octave |
+| Arrow keys (piano roll) | Move the selected note (Shift: by an octave); Ctrl+Left/Right changes its length |
 
 ## Building
 
@@ -205,13 +303,16 @@ On Fedora:
 sudo dnf install gcc gcc-c++ make pkgconf gtk4-devel libadwaita-devel SDL2-devel alsa-lib-devel
 ```
 
-Then build and run:
+Then build and run either program:
 
 ```sh
 cd src
 make -j
 ../linux/goattrk2 ../examples/dojo.sng
+../linux/sidmonkey
 ```
+
+SidMonkey's MP3 export uses `libmp3lame` when it is installed (`libmp3lame0` on Debian and Ubuntu, `lame-libs` on Fedora). It's loaded when needed, so it isn't required for building.
 
 `make install` copies the programs to `/usr/local/bin` and the man page to `/usr/local/man/man1`.
 
@@ -219,6 +320,8 @@ make -j
 
 - **Other platforms:** the Windows and MorphOS builds have been dropped, and this edition is for Linux.
 - **The classic interface:** the original full-screen text screen is gone.
+- **Six-voice songs:** songs for two SIDs (GoatTracker Stereo, GoatTracker Ultra) can't be opened.
+- **SidMonkey's limits:** it has no tempo control yet (songs keep their own tempo, new ones play 6 frames per row), and no settings for multispeed or NTSC beyond what GoatTracker's settings give.
 - **Hardware output:** HardSID and Catweasel support is still in the code but hasn't been tested with this edition.
 
 ## Credits and licence
