@@ -6,6 +6,7 @@ CFLAGS+=-Ibme -Iasm -O3
 CXXFLAGS+=$(CFLAGS) -fpermissive
 
 EXE=	$(PREFIX)goattrk2$(SUFFIX) \
+	$(PREFIX)sidmonkey$(SUFFIX) \
 	$(PREFIX)gt2reloc$(SUFFIX) \
 	$(PREFIX)ins2snd2$(SUFFIX) \
 	$(PREFIX)sngspli2$(SUFFIX) \
@@ -27,15 +28,26 @@ ENGINE_OBJS=goatdata.o gsong.o gorder.o gpattern.o ginstr.o gtable.o gplay.o gdi
 gsound.o gsid.o $(RESID_OBJS) $(ASM_OBJS) $(BME_OBJS)
 
 # GTK user interface
-GUI_OBJS=gtkui.o gtkgrid.o gtkpanels.o gtkdialogs.o gtkinfo.o gtkwav.o gtkmonitor.o gtkinput.o
+GUI_OBJS=gtkui.o gtkgrid.o gtkpanels.o gtkdialogs.o gtkwav.o gtkmonitor.o gtkinput.o
 
-$(PREFIX)goattrk2$(SUFFIX): $(GUI_OBJS) goattrk2.o greloc.o gundo.o grender.o $(ENGINE_OBJS)
+$(PREFIX)goattrk2$(SUFFIX): $(GUI_OBJS) goattrk2.o greloc.o gundo.o grender.o ginfo.o $(ENGINE_OBJS)
 	$(CXX) -o $@ $^ $(LIBS) $(GTK_LIBS)
 	strip $@
 
 # Only the GTK user interface needs the GTK headers
 $(GUI_OBJS): CFLAGS+=$(GTK_CFLAGS)
 $(GUI_OBJS): gtkui.h goattrk2.h gui.h gundo.h
+
+# SidMonkey: its own GTK user interface on the same engine. goattrk2.o
+# provides the engine's settings, globals and startup.
+SM_OBJS=smui.o smarrange.o
+
+$(PREFIX)sidmonkey$(SUFFIX): $(SM_OBJS) goattrk2.o greloc.o gundo.o grender.o ginfo.o ghost.o $(ENGINE_OBJS)
+	$(CXX) -o $@ $^ $(LIBS) $(GTK_LIBS)
+	strip $@
+
+$(SM_OBJS): CFLAGS+=$(GTK_CFLAGS)
+$(SM_OBJS): sm.h goattrk2.h gundo.h ginfo.h ghost.h
 
 # gt2reloc includes greloc.c itself
 $(PREFIX)gt2reloc$(SUFFIX): gt2reloc.o $(ENGINE_OBJS)

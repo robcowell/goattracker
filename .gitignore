@@ -1,6 +1,7 @@
 # Build output
 *.o
 /linux/goattrk2
+/linux/sidmonkey
 /linux/gt2reloc
 /linux/ins2snd2
 /linux/mod2sng
