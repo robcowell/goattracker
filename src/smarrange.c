@@ -26,6 +26,9 @@ static double cliplen[MAX_CHN][MAX_CLIPS];
 static int nclips[MAX_CHN];
 static int totalrows;
 static double framesperrow;  // the usual length of a row, 0 if not measured
+static long measured[MAX_CHN][MAX_CLIPS];  // frames each clip played, -1 if not measured
+static int timedby[MAX_CHN][MAX_CLIPS];    // the measured pass its rows' timing comes
+                                           // from (voice * MAX_CLIPS + clip), or -1
 static int rowpx = 4;
 
 static int selchn = -1, selclip = -1;
@@ -90,8 +93,8 @@ static long measuredframes(int c, long *frames)
 
 static void layout(void)
 {
-  static long frames[MAX_CHN][MAX_CLIPS];
-  static long pattframes[MAX_PATT];
+  static int pattpass[MAX_PATT];
+  long (*frames)[MAX_CLIPS] = measured;
   double fpr = 0, x;
   int c, i, measured = 0;
 
@@ -128,12 +131,12 @@ static void layout(void)
   }
   framesperrow = fpr;
 
-  // A clip the measurement doesn't cover takes its pattern's length from
+  // A clip the measurement doesn't cover takes its pattern's timing from
   // another place it was measured, or else its rows
-  for (i = 0; i < MAX_PATT; i++) pattframes[i] = -1;
+  for (i = 0; i < MAX_PATT; i++) pattpass[i] = -1;
   for (c = 0; c < MAX_CHN; c++)
     for (i = 0; i < nclips[c]; i++)
-      if ((frames[c][i] > 0) && (pattframes[clips[c][i].patt] < 0)) pattframes[clips[c][i].patt] = frames[c][i];
+      if ((frames[c][i] > 0) && (pattpass[clips[c][i].patt] < 0)) pattpass[clips[c][i].patt] = c * MAX_CLIPS + i;
 
   totalrows = 0;
   for (c = 0; c < MAX_CHN; c++)
@@ -141,7 +144,9 @@ static void layout(void)
     x = 0;
     for (i = 0; i < nclips[c]; i++)
     {
-      long f = frames[c][i] > 0 ? frames[c][i] : pattframes[clips[c][i].patt];
+      int by = frames[c][i] > 0 ? c * MAX_CLIPS + i : pattpass[clips[c][i].patt];
+      long f = by >= 0 ? frames[by / MAX_CLIPS][by % MAX_CLIPS] : -1;
+      timedby[c][i] = by;
       clipstart[c][i] = x;
       cliplen[c][i] = ((fpr > 0) && (f > 0)) ? f / fpr : cliprows(&clips[c][i]);
       x += cliplen[c][i];
@@ -220,9 +225,33 @@ static void text(cairo_t *cr, PangoLayout *pl, double x, double y, const char *s
   pango_cairo_show_layout(cr, pl);
 }
 
-// A miniature of the notes, scaled to the pattern's own pitch range
-static void drawnotes(cairo_t *cr, int patt, double x, double y, double h, double rowwidth)
+// Where row (0 to the clip's rows) of clip i of voice c starts, as a
+// fraction of the clip: when the measurement read that row, or else rows
+// spread evenly
+static void rowtiming(int c, int i, const long **rows, long *len)
 {
+  int by = ((c >= 0) && (i >= 0)) ? timedby[c][i] : -1;
+  int bc = by / MAX_CLIPS, bi = by % MAX_CLIPS;
+
+  *rows = NULL;
+  if ((by < 0) || (render_passrows(sm_subtune(), bc, bi, rows) != cliprows(&clips[bc][bi])) ||
+      ((*len = measured[bc][bi]) <= 0))
+    *rows = NULL;
+}
+
+static double rowfraction(const long *rows, long len, int row, int nrows)
+{
+  if (!rows) return (double)row / nrows;
+  if (row >= nrows) return 1;
+  return (double)(rows[row] - rows[0]) / len;
+}
+
+// A miniature of the notes, scaled to the pattern's own pitch range and
+// placed in time
+static void drawnotes(cairo_t *cr, int c, int i, int patt, double x, double y, double w, double h)
+{
+  const long *times;
+  long len = 0;
   unsigned char *p = pattern[patt];
   int rows = pattlen[patt], lo = 255, hi = -1, row, start = -1, note = 0;
 
@@ -236,6 +265,7 @@ static void drawnotes(cairo_t *cr, int patt, double x, double y, double h, doubl
     }
   }
   if (hi < 0) return;
+  rowtiming(c, i, &times, &len);
   if (hi - lo < 12)
   {
     lo -= (12 - (hi - lo)) / 2;
@@ -248,8 +278,9 @@ static void drawnotes(cairo_t *cr, int patt, double x, double y, double h, doubl
     if ((ends) && (start >= 0))
     {
       double ny = y + h - 3 - (double)(note - lo) / (hi - lo) * (h - 6);
-      double w = (row - start) * rowwidth - 1;
-      cairo_rectangle(cr, x + start * rowwidth, ny - 1.5, w > 1 ? w : 1, 3);
+      double x0 = x + rowfraction(times, len, start, rows) * w;
+      double nw = (rowfraction(times, len, row, rows) - rowfraction(times, len, start, rows)) * w - 1;
+      cairo_rectangle(cr, x0, ny - 1.5, nw > 1 ? nw : 1, 3);
       start = -1;
     }
     if ((n >= FIRSTNOTE) && (n <= LASTNOTE))
@@ -273,9 +304,10 @@ static void roundrect(cairo_t *cr, double x, double y, double w, double h)
   cairo_close_path(cr);
 }
 
-static void drawclip(cairo_t *cr, PangoLayout *pl, const CLIP *clip, double x, double y, double w, double h,
+static void drawclip(cairo_t *cr, PangoLayout *pl, int c, int i, double x, double y, double w, double h,
   double alpha, int font)
 {
+  const CLIP *clip = &clips[c][i];
   const double *col = sm_palette[clip->patt % 8];
   char buf[32];
 
@@ -287,7 +319,7 @@ static void drawclip(cairo_t *cr, PangoLayout *pl, const CLIP *clip, double x, d
   cairo_rectangle(cr, x, y, w, h);
   cairo_clip(cr);
   cairo_set_source_rgba(cr, 0.1, 0.1, 0.15, 0.55 * alpha);
-  drawnotes(cr, clip->patt, x, y + font * 1.8, h - font * 1.8, (w + 2) / cliprows(clip));
+  drawnotes(cr, c, i, clip->patt, x, y + font * 1.8, w + 2, h - font * 1.8);
   if (w > 24)
   {
     if (clip->trans) snprintf(buf, sizeof buf, "%02X %+d", clip->patt, clip->trans);
@@ -360,7 +392,7 @@ static void drawtimeline(GtkDrawingArea *area, cairo_t *cr, int width, int heigh
       double x = clipstart[c][i] * rowpx + 1, w = cliplen[c][i] * rowpx - 2;
       int selected = (c == selchn) && (i == selclip);
 
-      drawclip(cr, pl, &clips[c][i], x, y, w, h, (dragging && selected) ? 0.35 : (selected ? 1.0 : 0.78), font);
+      drawclip(cr, pl, c, i, x, y, w, h, (dragging && selected) ? 0.35 : (selected ? 1.0 : 0.78), font);
       if (selected)
       {
         roundrect(cr, x, y, w < 1 ? 1 : w, h);
@@ -391,14 +423,13 @@ static void drawtimeline(GtkDrawingArea *area, cairo_t *cr, int width, int heigh
   // Where a dragged clip would land, and the clip under the pointer
   if (dragging)
   {
-    const CLIP *clip = &clips[dragchn][dragclip];
     double x = (dropindex < nclips[droplane]) ? clipstart[droplane][dropindex] :
       (nclips[droplane] ? clipend(droplane, nclips[droplane] - 1) : 0);
 
     cairo_set_source_rgba(cr, fg.red, fg.green, fg.blue, 0.9);
     cairo_rectangle(cr, x * rowpx - 2, RULERH + droplane * LANEH + 2, 3, LANEH - 4);
     cairo_fill(cr);
-    drawclip(cr, pl, clip, dragx - dragoffset, dragy - (LANEH - 12) / 2, cliplen[dragchn][dragclip] * rowpx - 2,
+    drawclip(cr, pl, dragchn, dragclip, dragx - dragoffset, dragy - (LANEH - 12) / 2, cliplen[dragchn][dragclip] * rowpx - 2,
       LANEH - 12, 0.85, font);
   }
 

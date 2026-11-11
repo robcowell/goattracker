@@ -38,4 +38,8 @@ int render_seek(int subtune, int chnum, int songpos, int maxseconds);
 // started, 0 if the last render wasn't of this subtune.
 int render_passes(int subtune, int chnum, const long **frame, const int **pos, long *end);
 
+// The frames at which the last render read each row of a channel's pass
+// (as counted by render_passes()). Returns the number of rows read.
+int render_passrows(int subtune, int chnum, int pass, const long **frame);
+
 #endif

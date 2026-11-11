@@ -54,6 +54,7 @@ int seqpos[MAX_CHN];      // orderlist index of the pattern each channel last st
 unsigned seqcount[MAX_CHN]; // patterns each channel has started
 unsigned playframes;      // playroutine calls so far
 unsigned seqframe[MAX_CHN]; // the call on which each channel last started a pattern
+unsigned rowcount[MAX_CHN]; // pattern rows each channel has read
 
 void sequencer(int c, CHN *cptr);
 
@@ -927,6 +928,7 @@ void playroutine(void)
         cptr->newcommand = pattern[cptr->pattnum][cptr->pattptr+2];
         cptr->newcmddata = pattern[cptr->pattnum][cptr->pattptr+3];
         cptr->pattptr += 4;
+        rowcount[c]++;
         if ((looprowend >= 0) && (lastsonginit == PLAY_PATTERN) && (cptr->pattptr > (unsigned)looprowend * 4))
           cptr->pattptr = looprowstart * 4;
         if (pattern[cptr->pattnum][cptr->pattptr] == ENDPATT)

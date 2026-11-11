@@ -57,6 +57,24 @@ static int passpos[MAX_CHN][MAX_PASSES];
 static int npasses[MAX_CHN];
 static long passend[MAX_CHN];
 static unsigned lastseq[MAX_CHN];
+// When each row of those passes was read, one list per channel
+static int passrows[MAX_CHN][MAX_PASSES];
+static long *rowframe[MAX_CHN];
+static int nrows[MAX_CHN], maxrows[MAX_CHN];
+static unsigned lastrow[MAX_CHN];
+
+static void recordrow(int c, long frame)
+{
+  if (nrows[c] >= maxrows[c])
+  {
+    int size = maxrows[c] ? maxrows[c] * 2 : 4096;
+    long *grown = realloc(rowframe[c], size * sizeof(long));
+    if (!grown) return;
+    rowframe[c] = grown;
+    maxrows[c] = size;
+  }
+  rowframe[c][nrows[c]++] = frame;
+}
 
 static void recordpasses(long frame)
 {
@@ -74,9 +92,13 @@ static void recordpasses(long frame)
       {
         passframe[c][npasses[c]] = frame;
         passpos[c][npasses[c]] = seqpos[c];
+        passrows[c][npasses[c]] = nrows[c];
         npasses[c]++;
       }
     }
+    if ((passend[c] < 0) && (rowcount[c] != lastrow[c]) && (npasses[c]) && (npasses[c] < MAX_PASSES))
+      recordrow(c, frame);
+    lastrow[c] = rowcount[c];
     // The song stopped at the end of a voice with no loop
     if ((passend[c] < 0) && (!isplaying())) passend[c] = frame;
   }
@@ -89,6 +111,18 @@ int render_passes(int subtune, int chnum, const long **frame, const int **pos, l
   *pos = passpos[chnum];
   *end = passend[chnum];
   return npasses[chnum];
+}
+
+int render_passrows(int subtune, int chnum, int pass, const long **frame)
+{
+  int first, end;
+
+  if ((subtune != timedsubtune) || (chnum < 0) || (chnum >= MAX_CHN) || (pass < 0) || (pass >= npasses[chnum]))
+    return 0;
+  first = passrows[chnum][pass];
+  end = (pass + 1 < npasses[chnum]) ? passrows[chnum][pass + 1] : nrows[chnum];
+  *frame = rowframe[chnum] + first;
+  return end - first;
 }
 
 int render_begin(int subtune, int loops, int maxseconds, int silent)
@@ -127,6 +161,8 @@ int render_begin(int subtune, int loops, int maxseconds, int silent)
     npasses[c] = 0;
     passend[c] = -1;
     lastseq[c] = seqcount[c];
+    nrows[c] = 0;
+    lastrow[c] = rowcount[c];
   }
   return 1;
 }
