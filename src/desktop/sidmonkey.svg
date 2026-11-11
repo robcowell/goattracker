@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <!-- SidMonkey: a monkey face over piano-roll notes, in C64 blues -->
+  <rect x="8" y="8" width="112" height="112" rx="24" fill="#352879"/>
+  <g fill="#6c5eb5">
+    <rect x="20" y="90" width="26" height="8" rx="3"/>
+    <rect x="50" y="98" width="18" height="8" rx="3"/>
+    <rect x="72" y="86" width="34" height="8" rx="3"/>
+  </g>
+  <circle cx="30" cy="54" r="13" fill="#8b5429"/>
+  <circle cx="98" cy="54" r="13" fill="#8b5429"/>
+  <circle cx="30" cy="54" r="7" fill="#e0a070"/>
+  <circle cx="98" cy="54" r="7" fill="#e0a070"/>
+  <circle cx="64" cy="54" r="32" fill="#8b5429"/>
+  <path d="M40 58c0-12 10-18 24-12 14-6 24 0 24 12 0 16-11 26-24 26S40 74 40 58z" fill="#e0a070"/>
+  <circle cx="54" cy="52" r="5" fill="#1a1030"/>
+  <circle cx="74" cy="52" r="5" fill="#1a1030"/>
+  <circle cx="55.5" cy="50.5" r="1.6" fill="#fff"/>
+  <circle cx="75.5" cy="50.5" r="1.6" fill="#fff"/>
+  <path d="M54 70q10 8 20 0" fill="none" stroke="#1a1030" stroke-width="3" stroke-linecap="round"/>
+</svg>

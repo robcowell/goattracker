@@ -345,21 +345,26 @@ int goattrk2_init(int argc, char **argv)
     }
     else
     {
-      char startpath[MAX_PATHNAME];
+      // A launcher passes the full path of the file opened, which can be
+      // longer than either buffer: change to its folder, keep the bare name
+      const char *name = argv[c];
 
-      strcpy(songfilename, argv[c]);
       for (d = strlen(argv[c])-1; d >= 0; d--)
       {
         if ((argv[c][d] == '/') || (argv[c][d] == '\\'))
         {
-          strcpy(startpath, argv[c]);
+          char *startpath = strdup(argv[c]);
           startpath[d+1] = 0;
-          chdir(startpath);
-          initpaths();
-          strcpy(songfilename, &argv[c][d+1]);
+          if (chdir(startpath) == 0) initpaths();
+          free(startpath);
+          name = &argv[c][d+1];
           break;
         }
       }
+      if (strlen(name) < MAX_FILENAME)
+        strcpy(songfilename, name);
+      else
+        fprintf(stderr, "File name too long: %s\n", name);
     }
   }
 

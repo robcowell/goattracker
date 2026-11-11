@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=GoatTracker
+GenericName=SID Music Tracker
+Comment=Compose Commodore 64 SID music in a tracker
+Exec=goattrk2 %f
+Icon=goattrk2
+Terminal=false
+StartupWMClass=goattrk2
+Categories=AudioVideo;Audio;Music;Midi;
+Keywords=C64;Commodore;SID;tracker;chiptune;music;

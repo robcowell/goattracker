@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=SidMonkey
+GenericName=SID Music Composer
+Comment=Make Commodore 64 SID music with a timeline and piano roll
+Exec=sidmonkey %f
+Icon=sidmonkey
+Terminal=false
+StartupWMClass=sidmonkey
+Categories=AudioVideo;Audio;Music;Midi;
+Keywords=C64;Commodore;SID;chiptune;music;piano roll;
