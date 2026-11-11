@@ -52,6 +52,8 @@ int looprowstart = 0;     // editor: pattern play loops these rows (end -1 = off
 int looprowend = -1;
 int seqpos[MAX_CHN];      // orderlist index of the pattern each channel last started
 unsigned seqcount[MAX_CHN]; // patterns each channel has started
+unsigned playframes;      // playroutine calls so far
+unsigned seqframe[MAX_CHN]; // the call on which each channel last started a pattern
 
 void sequencer(int c, CHN *cptr);
 
@@ -172,6 +174,7 @@ void playroutine(void)
   CHN *cptr = &chn[0];
   int c;
 
+  playframes++;
   if (songinit == PLAY_STOP)
     followplay = 0;
 
@@ -1002,6 +1005,7 @@ void sequencer(int c, CHN *cptr)
     // Pattern number
     seqpos[c] = cptr->songptr;
     seqcount[c]++;
+    seqframe[c] = playframes;
     cptr->pattnum = songorder[psnum][c][cptr->songptr];
     if (cptr->repeat)
       cptr->repeat--;

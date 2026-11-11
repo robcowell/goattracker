@@ -31,4 +31,11 @@ double render_songlength(int subtune, int maxseconds);
 // playback stopped, if the position isn't reached within maxseconds.
 int render_seek(int subtune, int chnum, int songpos, int maxseconds);
 
+// When the last render started each pattern of a channel's first pass
+// through the orderlist: the frame and the orderlist index (as seqpos[]) of
+// each, and the frame where that pass ended (the channel looped or the song
+// stopped; -1 if the render ended first). Returns the number of patterns
+// started, 0 if the last render wasn't of this subtune.
+int render_passes(int subtune, int chnum, const long **frame, const int **pos, long *end);
+
 #endif

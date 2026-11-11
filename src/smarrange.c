@@ -1,8 +1,11 @@
 //
 // SidMonkey: the arrangement, three voice lanes on a timeline
 //
-// Each pattern a voice's orderlist plays is a clip, laid out in rows from
-// the start of the song (garrange.c reads and writes the orderlists).
+// Each pattern a voice's orderlist plays is a clip, laid out in time from
+// the start of the song (garrange.c reads and writes the orderlists). The
+// unit is a row at the song's usual tempo: a pattern that plays its rows
+// faster or slower than the others (a tempo command for one voice, say) is
+// drawn narrower or wider, so the voices line up as they sound.
 // Repeats show as one clip per pass, transposes as a label on the clip.
 // Clips can be dragged (Ctrl to copy), duplicated, transposed and deleted;
 // every edit writes the voice's orderlist back and makes an undo step.
@@ -18,9 +21,11 @@
 #define DRAGSTART 6
 
 static CLIP clips[MAX_CHN][MAX_CLIPS];
-static int clipstart[MAX_CHN][MAX_CLIPS];
+static double clipstart[MAX_CHN][MAX_CLIPS];
+static double cliplen[MAX_CHN][MAX_CLIPS];
 static int nclips[MAX_CHN];
 static int totalrows;
+static double framesperrow;  // the usual length of a row, 0 if not measured
 static int rowpx = 4;
 
 static int selchn = -1, selclip = -1;
@@ -49,12 +54,12 @@ static int cliprows(const CLIP *clip)
   return pattlen[clip->patt] > 0 ? pattlen[clip->patt] : 1;
 }
 
-static int clipend(int c, int i)
+static double clipend(int c, int i)
 {
-  return clipstart[c][i] + cliprows(&clips[c][i]);
+  return clipstart[c][i] + cliplen[c][i];
 }
 
-static int looprow(int c)
+static double looprow(int c)
 {
   int i;
 
@@ -63,21 +68,85 @@ static int looprow(int c)
   return -1;
 }
 
+// How long each clip played (in frames) when the song was last measured,
+// or -1 where that measurement doesn't fit the clips any more. A voice's
+// measurement holds for its clips up to the first that isn't where it was.
+static long measuredframes(int c, long *frames)
+{
+  const long *start;
+  const int *pos;
+  long end;
+  int n = render_passes(sm_subtune(), c, &start, &pos, &end), i;
+
+  for (i = 0; i < nclips[c]; i++) frames[i] = -1;
+  for (i = 0; (i < n) && (i < nclips[c]); i++)
+  {
+    long next = (i + 1 < n) ? start[i + 1] : end;
+    if ((clips[c][i].orderpos != pos[i]) || (next < 0)) break;
+    frames[i] = next - start[i];
+  }
+  return i;
+}
+
 static void layout(void)
 {
-  int c, i;
+  static long frames[MAX_CHN][MAX_CLIPS];
+  static long pattframes[MAX_PATT];
+  double fpr = 0, x;
+  int c, i, measured = 0;
+
+  for (c = 0; c < MAX_CHN; c++)
+  {
+    nclips[c] = arr_read(sm_subtune(), c, clips[c], MAX_CLIPS);
+    measured += measuredframes(c, frames[c]);
+  }
+
+  // The usual length of a row: the frames per row that most rows play at
+  if (measured)
+  {
+    static long rowsat[MAX_CHN * MAX_CLIPS];
+    static double rate[MAX_CHN * MAX_CLIPS];
+    int n = 0, best = -1, j;
+
+    for (c = 0; c < MAX_CHN; c++)
+      for (i = 0; i < nclips[c]; i++)
+      {
+        double r;
+        if (frames[c][i] <= 0) continue;
+        r = (double)frames[c][i] / cliprows(&clips[c][i]);
+        for (j = 0; j < n; j++)
+          if (fabs(rate[j] - r) < 0.01) break;
+        if (j == n)
+        {
+          rate[n] = r;
+          rowsat[n++] = 0;
+        }
+        rowsat[j] += cliprows(&clips[c][i]);
+        if ((best < 0) || (rowsat[j] > rowsat[best])) best = j;
+      }
+    if (best >= 0) fpr = rate[best];
+  }
+  framesperrow = fpr;
+
+  // A clip the measurement doesn't cover takes its pattern's length from
+  // another place it was measured, or else its rows
+  for (i = 0; i < MAX_PATT; i++) pattframes[i] = -1;
+  for (c = 0; c < MAX_CHN; c++)
+    for (i = 0; i < nclips[c]; i++)
+      if ((frames[c][i] > 0) && (pattframes[clips[c][i].patt] < 0)) pattframes[clips[c][i].patt] = frames[c][i];
 
   totalrows = 0;
   for (c = 0; c < MAX_CHN; c++)
   {
-    int rows = 0;
-    nclips[c] = arr_read(sm_subtune(), c, clips[c], MAX_CLIPS);
+    x = 0;
     for (i = 0; i < nclips[c]; i++)
     {
-      clipstart[c][i] = rows;
-      rows += cliprows(&clips[c][i]);
+      long f = frames[c][i] > 0 ? frames[c][i] : pattframes[clips[c][i].patt];
+      clipstart[c][i] = x;
+      cliplen[c][i] = ((fpr > 0) && (f > 0)) ? f / fpr : cliprows(&clips[c][i]);
+      x += cliplen[c][i];
     }
-    if (rows > totalrows) totalrows = rows;
+    if ((int)ceil(x) > totalrows) totalrows = (int)ceil(x);
   }
 }
 
@@ -134,8 +203,9 @@ static int rowsperbar(void)
   return (stepsize > 0 ? stepsize : 4) * 4;
 }
 
-static void barname(int row, char *buf, int size)
+static void barname(double pos, char *buf, int size)
 {
+  int row = (int)(pos + 0.5);
   int bar = row / rowsperbar() + 1;
   int beat = (row % rowsperbar()) / (rowsperbar() / 4) + 1;
 
@@ -151,7 +221,7 @@ static void text(cairo_t *cr, PangoLayout *pl, double x, double y, const char *s
 }
 
 // A miniature of the notes, scaled to the pattern's own pitch range
-static void drawnotes(cairo_t *cr, int patt, double x, double y, double h)
+static void drawnotes(cairo_t *cr, int patt, double x, double y, double h, double rowwidth)
 {
   unsigned char *p = pattern[patt];
   int rows = pattlen[patt], lo = 255, hi = -1, row, start = -1, note = 0;
@@ -178,8 +248,8 @@ static void drawnotes(cairo_t *cr, int patt, double x, double y, double h)
     if ((ends) && (start >= 0))
     {
       double ny = y + h - 3 - (double)(note - lo) / (hi - lo) * (h - 6);
-      double w = (row - start) * rowpx - 1;
-      cairo_rectangle(cr, x + start * rowpx, ny - 1.5, w > 1 ? w : 1, 3);
+      double w = (row - start) * rowwidth - 1;
+      cairo_rectangle(cr, x + start * rowwidth, ny - 1.5, w > 1 ? w : 1, 3);
       start = -1;
     }
     if ((n >= FIRSTNOTE) && (n <= LASTNOTE))
@@ -217,7 +287,7 @@ static void drawclip(cairo_t *cr, PangoLayout *pl, const CLIP *clip, double x, d
   cairo_rectangle(cr, x, y, w, h);
   cairo_clip(cr);
   cairo_set_source_rgba(cr, 0.1, 0.1, 0.15, 0.55 * alpha);
-  drawnotes(cr, clip->patt, x, y + font * 1.8, h - font * 1.8);
+  drawnotes(cr, clip->patt, x, y + font * 1.8, h - font * 1.8, (w + 2) / cliprows(clip));
   if (w > 24)
   {
     if (clip->trans) snprintf(buf, sizeof buf, "%02X %+d", clip->patt, clip->trans);
@@ -226,6 +296,21 @@ static void drawclip(cairo_t *cr, PangoLayout *pl, const CLIP *clip, double x, d
     text(cr, pl, x + 5, y + 2, buf);
   }
   cairo_restore(cr);
+}
+
+// Where a voice's playhead is: how long its clip has been playing, which
+// follows tempo changes inside the clip, or else its row
+static double playx(int c)
+{
+  int i = playclip[c];
+  double pos = playrow[c] * cliplen[c][i] / cliprows(&clips[c][i]);
+
+  if (framesperrow > 0)
+  {
+    pos = (unsigned)(playframes - seqframe[c]) / framesperrow;
+    if (pos > cliplen[c][i]) pos = cliplen[c][i];
+  }
+  return (clipstart[c][i] + pos) * rowpx;
 }
 
 static void drawtimeline(GtkDrawingArea *area, cairo_t *cr, int width, int height, gpointer data)
@@ -268,11 +353,11 @@ static void drawtimeline(GtkDrawingArea *area, cairo_t *cr, int width, int heigh
   for (c = 0; c < MAX_CHN; c++)
   {
     double y = RULERH + c * LANEH + 6, h = LANEH - 12;
-    int loop = looprow(c);
+    double loop = looprow(c);
 
     for (i = 0; i < nclips[c]; i++)
     {
-      double x = clipstart[c][i] * rowpx + 1, w = cliprows(&clips[c][i]) * rowpx - 2;
+      double x = clipstart[c][i] * rowpx + 1, w = cliplen[c][i] * rowpx - 2;
       int selected = (c == selchn) && (i == selclip);
 
       drawclip(cr, pl, &clips[c][i], x, y, w, h, (dragging && selected) ? 0.35 : (selected ? 1.0 : 0.78), font);
@@ -287,7 +372,7 @@ static void drawtimeline(GtkDrawingArea *area, cairo_t *cr, int width, int heigh
 
     if (nclips[c])
     {
-      int end = clipend(c, nclips[c] - 1);
+      double end = clipend(c, nclips[c] - 1);
 
       // Where the voice goes after its last clip
       cairo_set_source_rgba(cr, fg.red, fg.green, fg.blue, 0.6);
@@ -307,14 +392,14 @@ static void drawtimeline(GtkDrawingArea *area, cairo_t *cr, int width, int heigh
   if (dragging)
   {
     const CLIP *clip = &clips[dragchn][dragclip];
-    int x = (dropindex < nclips[droplane]) ? clipstart[droplane][dropindex] :
+    double x = (dropindex < nclips[droplane]) ? clipstart[droplane][dropindex] :
       (nclips[droplane] ? clipend(droplane, nclips[droplane] - 1) : 0);
 
     cairo_set_source_rgba(cr, fg.red, fg.green, fg.blue, 0.9);
     cairo_rectangle(cr, x * rowpx - 2, RULERH + droplane * LANEH + 2, 3, LANEH - 4);
     cairo_fill(cr);
-    drawclip(cr, pl, clip, dragx - dragoffset, dragy - (LANEH - 12) / 2, cliprows(clip) * rowpx - 2, LANEH - 12,
-      0.85, font);
+    drawclip(cr, pl, clip, dragx - dragoffset, dragy - (LANEH - 12) / 2, cliplen[dragchn][dragclip] * rowpx - 2,
+      LANEH - 12, 0.85, font);
   }
 
   // Playheads, one per voice: voices can drift apart with their own tempos
@@ -324,7 +409,7 @@ static void drawtimeline(GtkDrawingArea *area, cairo_t *cr, int width, int heigh
     {
       if ((playclip[c] < 0) || (playclip[c] >= nclips[c])) continue;
       cairo_set_source_rgba(cr, 0.90, 0.20, 0.25, 0.95);
-      cairo_rectangle(cr, (clipstart[c][playclip[c]] + playrow[c]) * rowpx - 1, RULERH + c * LANEH, 2, LANEH);
+      cairo_rectangle(cr, playx(c) - 1, RULERH + c * LANEH, 2, LANEH);
       cairo_fill(cr);
     }
   }
@@ -375,7 +460,8 @@ static int lanefromy(double y)
 static int hitclip(double x, double y, int *chnum)
 {
   int c = ((int)y - RULERH) / LANEH;
-  int row = (int)(x / rowpx), i;
+  double row = x / rowpx;
+  int i;
 
   if ((y < RULERH) || (c < 0) || (c >= MAX_CHN)) return -1;
   *chnum = c;
@@ -753,7 +839,7 @@ static void finddrop(double x, double y)
   droplane = c;
   for (i = 0; i <= nclips[c]; i++)
   {
-    int b = (i < nclips[c]) ? clipstart[c][i] : (nclips[c] ? clipend(c, nclips[c] - 1) : 0);
+    double b = (i < nclips[c]) ? clipstart[c][i] : (nclips[c] ? clipend(c, nclips[c] - 1) : 0);
     double d = fabs(b - row);
     if (d < bestd)
     {
@@ -789,7 +875,7 @@ static void ondragend(GtkGestureDrag *gesture, double dx, double dy, gpointer da
   gtk_widget_queue_draw(timeline);
 }
 
-static void selectnear(int c, int row)
+static void selectnear(int c, double row)
 {
   int i;
 
@@ -961,7 +1047,7 @@ void arrange_tick(void)
   if ((playclip[0] >= 0) && (playclip[0] < nclips[0]) && (!dragging))
   {
     GtkAdjustment *adj = gtk_scrolled_window_get_hadjustment(scroller);
-    double x = (clipstart[0][playclip[0]] + playrow[0]) * rowpx;
+    double x = playx(0);
     double left = gtk_adjustment_get_value(adj);
     double page = gtk_adjustment_get_page_size(adj);
     if ((x < left) || (x > left + page - 32)) gtk_adjustment_set_value(adj, x - 32);

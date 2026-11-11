@@ -107,6 +107,8 @@ static void measurenow(void)
 {
   songseconds = render_songlength(subtune, 15 * 60);
   updatetime();
+  // The timeline is laid out from when the measurement started each pattern
+  arrange_refresh();
 }
 
 static gboolean onmeasuretimer(gpointer data)

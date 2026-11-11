@@ -48,8 +48,53 @@ static void prerollsid(void)
 
 static int savedloopplay;
 
+// When each channel started each pattern of its first pass through the
+// orderlist, for a timeline drawn in time rather than rows
+#define MAX_PASSES (MAX_SONGLEN * 16)
+static int timedsubtune = -1;
+static long passframe[MAX_CHN][MAX_PASSES];
+static int passpos[MAX_CHN][MAX_PASSES];
+static int npasses[MAX_CHN];
+static long passend[MAX_CHN];
+static unsigned lastseq[MAX_CHN];
+
+static void recordpasses(long frame)
+{
+  int c;
+
+  for (c = 0; c < MAX_CHN; c++)
+  {
+    if (passend[c] >= 0) continue;
+    if (songloops[c])
+      passend[c] = frame;
+    else if (seqcount[c] != lastseq[c])
+    {
+      lastseq[c] = seqcount[c];
+      if (npasses[c] < MAX_PASSES)
+      {
+        passframe[c][npasses[c]] = frame;
+        passpos[c][npasses[c]] = seqpos[c];
+        npasses[c]++;
+      }
+    }
+    // The song stopped at the end of a voice with no loop
+    if ((passend[c] < 0) && (!isplaying())) passend[c] = frame;
+  }
+}
+
+int render_passes(int subtune, int chnum, const long **frame, const int **pos, long *end)
+{
+  if ((subtune != timedsubtune) || (chnum < 0) || (chnum >= MAX_CHN)) return 0;
+  *frame = passframe[chnum];
+  *pos = passpos[chnum];
+  *end = passend[chnum];
+  return npasses[chnum];
+}
+
 int render_begin(int subtune, int loops, int maxseconds, int silent)
 {
+  int c;
+
   if (rendering) return 0;
 
   // Keep the audio callback out until render_end()
@@ -76,6 +121,13 @@ int render_begin(int subtune, int loops, int maxseconds, int silent)
     prerollsid();
   }
   initsong(subtune, PLAY_BEGINNING);
+  timedsubtune = subtune;
+  for (c = 0; c < MAX_CHN; c++)
+  {
+    npasses[c] = 0;
+    passend[c] = -1;
+    lastseq[c] = seqcount[c];
+  }
   return 1;
 }
 
@@ -99,6 +151,7 @@ int render_run(short *buf, int maxsamples)
     int n;
 
     playroutine();
+    recordpasses(frames);
     frames++;
     n = (int)(samplesperframe + fraction);
     fraction = samplesperframe + fraction - n;

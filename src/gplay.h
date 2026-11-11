@@ -51,6 +51,8 @@ extern int looprowstart;
 extern int looprowend;
 extern int seqpos[MAX_CHN];
 extern unsigned seqcount[MAX_CHN];
+extern unsigned playframes;
+extern unsigned seqframe[MAX_CHN];
 #endif
 
 void initchannels(void);
